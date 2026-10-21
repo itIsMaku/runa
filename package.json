@@ -12,14 +12,19 @@
   "bugs": {
     "url": "https://github.com/itIsMaku/runa/issues"
   },
-  "keywords": ["cli", "runner", "tasks", "project", "cross-platform"],
+  "keywords": [
+    "cli",
+    "runner",
+    "tasks",
+    "project",
+    "cross-platform"
+  ],
   "bin": {
-    "runa": "bin/runa.js",
-    "runany": "bin/runa.js"
+    "runa": "dist/bin.js",
+    "runany": "dist/bin.js"
   },
   "files": [
-    "bin",
-    "src",
+    "dist",
     "README.md",
     "LICENSE"
   ],
@@ -27,8 +32,28 @@
     "node": ">=20"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
     "test": "node --test",
-    "check": "node --check bin/runa.js && node --check src/cli.js && node --check src/detect.js && node --check src/process.js"
+    "prepare": "npm run build",
+    "lint": "biome check --error-on-warnings .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "test:package": "node scripts/verify-package.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "2.6.2",
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  }
 }

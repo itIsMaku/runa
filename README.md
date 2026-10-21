@@ -23,6 +23,7 @@ Requires Node.js 20+ and npm:
 ```sh
 git clone https://github.com/itIsMaku/runa.git
 cd runa
+npm ci
 npm install --global .
 runa --help
 ```
@@ -30,7 +31,7 @@ runa --help
 Or try it without installing:
 
 ```sh
-node /path/to/anyrun/bin/runa.js -C /path/to/your-project --dry-run
+node /path/to/runa/dist/bin.js -C /path/to/your-project --dry-run
 ```
 
 The package is named `runanything-cli` locally; it has not been published to npm by this project. Use the repository installation above. The CLI is designed for macOS, Linux, and Windows. GitHub Actions checks all three systems with Node.js 20, 22, and 24.
@@ -89,13 +90,19 @@ runa test --dry-run --json
 
 ## Development
 
-No runtime dependencies or build step.
+Source code uses strict TypeScript and compiles to ESM JavaScript in `dist/`. The installed CLI has no runtime dependencies and does not need TypeScript. Biome handles linting, import ordering, and formatting; CI checks these alongside types, tests, and installation of the packaged CLI.
 
 ```sh
+npm ci
+npm run lint
 npm run check
 npm test
-npm pack --dry-run
+npm run test:package
+npm run format         # Format source, tests, and JSON
+npm run lint:fix       # Apply safe lint fixes and organize imports
 ```
+
+Runner modules live in `src/runners/`; Node package managers live in `src/package-managers/`. Each implements a small typed interface and is registered in its directory's `index.ts`. Selection and process execution use task metadata, so new integrations do not require runner-specific changes to the core. See [the extension guide](CONTRIBUTING.md#adding-a-runner) for an example.
 
 Contributions and bug reports are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) or [open an issue](https://github.com/itIsMaku/runa/issues).
 

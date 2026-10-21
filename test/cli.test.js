@@ -1,26 +1,33 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from 'node:fs';
-import { spawnSync, spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { spawnSpec } from '../src/process.js';
+import { spawnSpec } from '../dist/process.js';
 
-const cli = fileURLToPath(new URL('../bin/runa.js', import.meta.url));
+const cli = fileURLToPath(new URL('../dist/bin.js', import.meta.url));
 
 function fixture(t, files = {}) {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'runany cli with spaces-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   for (const [file, content] of Object.entries(files)) {
     mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
-    writeFileSync(path.join(directory, file), typeof content === 'string' ? content : JSON.stringify(content));
+    writeFileSync(
+      path.join(directory, file),
+      typeof content === 'string' ? content : JSON.stringify(content),
+    );
   }
   return directory;
 }
 
 function invoke(cwd, ...args) {
-  const result = spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8', timeout: 15000 });
+  const result = spawnSync(process.execPath, [cli, ...args], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 15000,
+  });
   assert.ifError(result.error);
   return result;
 }
@@ -56,7 +63,12 @@ test('--cwd discovers a project elsewhere and --json is parseable', (t) => {
 });
 
 test('--list and --dry-run do not execute project code', (t) => {
-  const cwd = fixture(t, { '.runany.json': { default: 'dev', commands: { dev: [process.execPath, '-e', 'require("fs").writeFileSync("MARKER", "ran")'] } } });
+  const cwd = fixture(t, {
+    '.runany.json': {
+      default: 'dev',
+      commands: { dev: [process.execPath, '-e', 'require("fs").writeFileSync("MARKER", "ran")'] },
+    },
+  });
   const list = invoke(cwd, '--list');
   assert.equal(list.status, 0, list.stderr);
   assert.match(list.stdout, /config:dev/);
@@ -69,9 +81,19 @@ test('--list and --dry-run do not execute project code', (t) => {
 test('executes in the project directory with literal arguments and preserves exit code', (t) => {
   const cwd = fixture(t, {
     '.runany.json': { default: 'dev', commands: { dev: [process.execPath, 'app.cjs'] } },
-    'app.cjs': 'console.log(JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) })); process.exitCode = 7;',
+    'app.cjs':
+      'console.log(JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) })); process.exitCode = 7;',
   });
-  const args = ['hello world', '', 'a"b', 'a&b', '$(echo injected)', '%PATH%', 'C:\\some path\\', 'žluťoučký'];
+  const args = [
+    'hello world',
+    '',
+    'a"b',
+    'a&b',
+    '$(echo injected)',
+    '%PATH%',
+    'C:\\some path\\',
+    'žluťoučký',
+  ];
   const result = invoke(cwd, '--', ...args);
   assert.equal(result.status, 7, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { cwd: realpathSync(cwd), args });
@@ -91,14 +113,21 @@ test('real npm scripts receive literal forwarded arguments', (t) => {
 });
 
 test('unknown runner and absent executable have helpful errors', (t) => {
-  const cwd = fixture(t, { '.runany.json': { default: 'dev', commands: { dev: ['runany-executable-that-does-not-exist-12345'] } } });
+  const cwd = fixture(t, {
+    '.runany.json': {
+      default: 'dev',
+      commands: { dev: ['runany-executable-that-does-not-exist-12345'] },
+    },
+  });
   const missing = invoke(cwd);
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /not installed or is not on PATH/);
   assert.match(invoke(cwd, 'unknown').stderr, /Unknown task/);
 });
 
-test('Windows resolves a cmd shim instead of a sibling POSIX script', { skip: process.platform !== 'win32' }, (t) => {
+test('Windows resolves a cmd shim instead of a sibling POSIX script', {
+  skip: process.platform !== 'win32',
+}, (t) => {
   const cwd = fixture(t, { runner: '#!/bin/sh\n', 'runner.cmd': '@echo ok\r\n' });
   const spec = spawnSpec('runner', [], cwd, 'win32', { PATHEXT: '.EXE;.CMD', PATH: cwd });
   assert.equal(spec.bin, 'cmd.exe');
@@ -107,20 +136,28 @@ test('Windows resolves a cmd shim instead of a sibling POSIX script', { skip: pr
 });
 
 test('non-interactive ambiguous default fails without hanging or guessing', (t) => {
-  const cwd = fixture(t, { 'package.json': { scripts: { build: 'echo build', test: 'echo test' } } });
+  const cwd = fixture(t, {
+    'package.json': { scripts: { build: 'echo build', test: 'echo test' } },
+  });
   const result = invoke(cwd);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /No unambiguous default.*--list/);
 });
 
 test('does not discover or run tasks in parent directories', (t) => {
-  const cwd = fixture(t, { 'package.json': { scripts: { dev: 'echo parent' } }, 'nested/.keep': '' });
+  const cwd = fixture(t, {
+    'package.json': { scripts: { dev: 'echo parent' } },
+    'nested/.keep': '',
+  });
   const result = invoke(path.join(cwd, 'nested'));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /No supported tasks/);
 });
 
-test('SIGTERM reaches child and results in signal exit code', { skip: process.platform === 'win32', timeout: 10000 }, async (t) => {
+test('SIGTERM reaches child and results in signal exit code', {
+  skip: process.platform === 'win32',
+  timeout: 10000,
+}, async (t) => {
   const cwd = fixture(t, {
     '.runany.json': { default: 'dev', commands: { dev: [process.execPath, 'app.cjs'] } },
     'app.cjs': 'console.log("READY"); setInterval(() => {}, 1000);',
@@ -130,7 +167,9 @@ test('SIGTERM reaches child and results in signal exit code', { skip: process.pl
   let output = '';
   child.stdout.on('data', (data) => {
     output += data;
-    if (output.includes('READY')) child.kill('SIGTERM');
+    if (output.includes('READY')) {
+      child.kill('SIGTERM');
+    }
   });
   const result = await new Promise((resolve, reject) => {
     child.once('error', reject);
