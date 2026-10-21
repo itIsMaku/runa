@@ -1,0 +1,34 @@
+{
+  "name": "runanything-cli",
+  "version": "0.1.0",
+  "description": "One command to discover and run your project's tasks.",
+  "type": "module",
+  "author": "Adam Volkman <volkman.adam@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itIsMaku/runa.git"
+  },
+  "homepage": "https://github.com/itIsMaku/runa#readme",
+  "bugs": {
+    "url": "https://github.com/itIsMaku/runa/issues"
+  },
+  "keywords": ["cli", "runner", "tasks", "project", "cross-platform"],
+  "bin": {
+    "runa": "bin/runa.js",
+    "runany": "bin/runa.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check bin/runa.js && node --check src/cli.js && node --check src/detect.js && node --check src/process.js"
+  },
+  "license": "MIT"
+}
