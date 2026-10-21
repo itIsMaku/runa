@@ -4,18 +4,95 @@ Thanks for helping improve runa. Report bugs and suggest features in [GitHub iss
 
 ## Local development
 
-Requires Node.js 20+ and npm. There are no runtime dependencies or build steps.
+Requires Node.js 20+ and npm. The source uses strict TypeScript; `npm run build` emits JavaScript and type declarations to `dist/`. There are no runtime dependencies.
 
 ```sh
 git clone https://github.com/itIsMaku/runa.git
 cd runa
-node bin/runa.js --help
+npm ci
+node dist/bin.js --help
+npm run lint
 npm run check
 npm test
-npm pack --dry-run
+npm run test:package
 ```
 
-Use `node bin/runa.js -C /path/to/project --dry-run` to try detection against another project without running its tasks.
+Use `node dist/bin.js -C /path/to/project --dry-run` to try detection against another project without running its tasks. Rebuild after source changes. `npm test` builds automatically.
+
+## Code style
+
+Run `npm run format` to format code or `npm run lint:fix` to apply safe lint fixes and organize imports. Biome enforces two spaces, single quotes, braces around control-flow bodies, and a 100-character line width. `npm run lint` checks formatting, imports, and recommended lint rules without modifying files; warnings fail CI.
+
+The repository includes EditorConfig settings and recommends the Biome VS Code extension, with formatting on save enabled. Generated `dist/`, dependencies, and the generated lockfile are excluded from formatting.
+
+## Architecture
+
+| Module                  | Responsibility                                                |
+| ----------------------- | ------------------------------------------------------------- |
+| `src/types.ts`          | Contracts for runners, package managers, tasks, and commands  |
+| `src/context.ts`        | Read-only project files and cached reads                      |
+| `src/runners/`          | Independent ecosystem detectors                               |
+| `src/package-managers/` | Node package manager lockfiles and script invocation          |
+| `src/detect.ts`         | Invoke registered runners and combine their task descriptions |
+| `src/selection.ts`      | Apply generic default and ambiguity rules                     |
+| `src/process.ts`        | Forward arguments, spawn commands, and preserve exit codes    |
+| `src/cli.ts`            | CLI parsing and presentation                                  |
+
+Discovery only returns command data. Runner-specific argument separators, explicit defaults, name overrides, and startup preferences are metadata on tasks; the core does not branch on runner names or executables. The built-in registry is explicit, with no directory scanning or dynamic loading of project code.
+
+## Adding a runner
+
+Create `src/runners/maven.ts`, for example:
+
+```ts
+import type { Runner } from '../types.js';
+
+export const mavenRunner: Runner = {
+  id: 'maven',
+  priority: 40,
+  detect(context) {
+    if (!context.has('pom.xml')) {
+      return [];
+    }
+    return ['test', 'build'].map((name) => ({
+      name,
+      source: 'pom.xml',
+      bin: 'mvn',
+      args: [name === 'build' ? 'package' : 'test'],
+    }));
+  },
+};
+```
+
+Import it and add it to `builtinRunners` in `src/runners/index.ts`. Add fixture tests and document the supported layouts. There are no changes to detection orchestration, selection, or process execution. This example is a starting point; built-in Maven support has not been added by this refactor.
+
+Use `defaultRank` for a runnable task with a custom name such as `run-api`. The normal startup ranks are `dev` (0), `start` (1), `serve` (2), `run` (3), `up` (4), and `watch` (5). Set `argumentSeparator: '--'` if the tool needs a separator before forwarded application arguments. Build and test tasks should not get a startup rank. `isDefault` and `override` are reserved by convention for explicit project configuration.
+
+## Adding a Node package manager
+
+Implement `PackageManager` in `src/package-managers/`:
+
+```ts
+import type { PackageManager } from '../types.js';
+
+export const customManager: PackageManager = {
+  id: 'custom-pm',
+  lockfiles: ['custom.lock'],
+  runScript: (name) => ({
+    bin: 'custom-pm',
+    args: ['run', name],
+    argumentSeparator: '--',
+  }),
+};
+```
+
+Register it in `src/package-managers/index.ts`. The Node runner uses the registry for both the `packageManager` field and lockfile detection. Tools from other ecosystems should get their own runner rather than going through the Node script detector.
+
+For isolated tests, inject a runner list as the third argument to `detect(directory, platform, runners)` or pass a manager list to `createNodeRunner(managers)`. See `test/extensions.test.js` for tests that add integrations without changing core code.
+
+## Build and package checks
+
+`npm ci` installs development tools and builds the CLI through `prepare`. `npm run check` type-checks without emitting files. `npm run test:package` creates a tarball, installs it into a temporary prefix with lifecycle scripts disabled, and verifies both CLI aliases and the compiled API. This ensures installed users do not need TypeScript or a build step. Do not commit generated `dist/` files.
 
 ## Pull requests
 
@@ -23,4 +100,4 @@ Fork the repository and make your changes on a branch. Describe the problem, the
 
 For changes to detection or process execution, add a focused test using a temporary project. Discovery must read project files without executing project code. Keep macOS, Linux, and Windows behavior in mind, especially argument passing, paths with spaces, and exit codes. Update the README when adding support for a project type or changing CLI behavior.
 
-CI checks syntax, tests, and package contents on all three operating systems. Contributions are made under the repository's [MIT license](LICENSE).
+CI checks linting, formatting, types, tests, and package installation on all three operating systems. Contributions are made under the repository's [MIT license](LICENSE).
