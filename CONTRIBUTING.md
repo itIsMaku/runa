@@ -27,16 +27,18 @@ The repository includes EditorConfig settings and recommends the Biome VS Code e
 
 ## Architecture
 
-| Module                  | Responsibility                                                |
-| ----------------------- | ------------------------------------------------------------- |
-| `src/types.ts`          | Contracts for runners, package managers, tasks, and commands  |
-| `src/context.ts`        | Read-only project files and cached reads                      |
-| `src/runners/`          | Independent ecosystem detectors                               |
-| `src/package-managers/` | Node package manager lockfiles and script invocation          |
-| `src/detect.ts`         | Invoke registered runners and combine their task descriptions |
-| `src/selection.ts`      | Apply generic default and ambiguity rules                     |
-| `src/process.ts`        | Forward arguments, spawn commands, and preserve exit codes    |
-| `src/cli.ts`            | CLI parsing and presentation                                  |
+| Module                   | Responsibility                                                |
+| ------------------------ | ------------------------------------------------------------- |
+| `src/types.ts`           | Contracts for runners, package managers, tasks, and commands  |
+| `src/context.ts`         | Read-only project files and cached reads                      |
+| `src/runners/`           | Independent ecosystem detectors                               |
+| `src/package-managers/`  | Node package manager lockfiles and script invocation          |
+| `src/detect.ts`          | Invoke registered runners and combine their task descriptions |
+| `src/selection.ts`       | Apply generic default and ambiguity rules                     |
+| `src/process.ts`         | Forward arguments, spawn commands, and preserve exit codes    |
+| `src/publish/`           | Readiness, temporary sharing, and tunnel providers            |
+| `src/managed-process.ts` | Supervise and stop process trees while observing output       |
+| `src/cli.ts`             | CLI parsing and presentation                                  |
 
 Discovery only returns command data. Runner-specific argument separators, explicit defaults, name overrides, and startup preferences are metadata on tasks; the core does not branch on runner names or executables. The built-in registry is explicit, with no directory scanning or dynamic loading of project code.
 
@@ -89,6 +91,12 @@ export const customManager: PackageManager = {
 Register it in `src/package-managers/index.ts`. The Node runner uses the registry for both the `packageManager` field and lockfile detection. Tools from other ecosystems should get their own runner rather than going through the Node script detector.
 
 For isolated tests, inject a runner list as the third argument to `detect(directory, platform, runners)` or pass a manager list to `createNodeRunner(managers)`. See `test/extensions.test.js` for tests that add integrations without changing core code.
+
+## Adding a tunnel provider
+
+Implement `TunnelProvider` in `src/publish/providers/`, then register it in that directory's `index.ts`. A provider defines its availability check, install hint, command for a loopback target, and public-URL parser. App startup, HTTP readiness, timeouts, signal handling, and cleanup stay in the shared publish session. The CLI selects providers with `--tunnel <id>`; project runners need no changes.
+
+`publish(command, options, provider)` accepts an injected provider and an optional AbortSignal for programmatic cancellation. Use a local test proxy for integration tests rather than creating public Internet tunnels. `test/publish.test.js` verifies actual HTTP forwarding and cleanup, including subprocess trees and failure paths. Live Cloudflare availability is not a dependency of CI.
 
 ## Build and package checks
 

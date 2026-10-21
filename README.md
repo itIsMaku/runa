@@ -14,6 +14,7 @@ runa -- --port 3000          # Forward arguments to the default task
 runa make:dev               # Select a specific runner
 runa --choose               # Pick a task interactively
 runa -C ../another-project   # Use a different directory
+runa --publish              # Share a running app through a temporary public URL
 ```
 
 ## Install locally
@@ -87,6 +88,33 @@ runany does not install project dependencies or missing runners itself. The chos
 runa --list --json
 runa test --dry-run --json
 ```
+
+## Share a localhost preview
+
+Install [cloudflared](https://developers.cloudflare.com/tunnel/downloads/) once (on macOS: `brew install cloudflared`). Then, in a web project:
+
+```sh
+runa --publish
+```
+
+runany starts the selected task, detects a loopback URL from its startup output, waits for an HTTP response, and starts a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/). The terminal prints a temporary HTTPS URL such as `https://random-name.trycloudflare.com` to share with a friend. A Cloudflare account or domain is not required. Anyone with that URL can access the app; Ctrl+C stops the app and tunnel. The URL changes on the next run.
+
+If the app doesn't print a local URL, specify its port:
+
+```sh
+runa --publish --port 3000
+runa dev --publish --port 3000 -- --port 3000
+runa --publish --port 3000 --dry-run
+runa --publish --port 3000 --dry-run --json
+```
+
+`--port` sets the tunnel's local target; it does not change the app's listening port. Forward application-specific flags after `--` when needed. Explicit ports already in use are rejected before the task starts. Automatic detection accepts complete HTTP/HTTPS URLs on `localhost`, `127.0.0.1`, `0.0.0.0`, `[::1]`, or `[::]`; wildcard listeners are mapped to loopback. It does not scan other ports. HTTPS origins must have a certificate trusted by Node.js and cloudflared.
+
+Startup discovery/readiness has a 60-second limit; the tunnel has 30 seconds to provide a public URL. If the app exits, the tunnel fails, or startup times out, both process trees are stopped. The app's nonzero exit code is preserved. Application output remains visible, but publish mode captures it through pipes, so buffered output or TTY-dependent tools may need an explicit port or unbuffered logging. Keep the task in the foreground rather than daemonizing its server.
+
+This shares one local web service for a preview. Frontends with separate APIs should proxy those requests through the shared app instead of using browser URLs pointing to `localhost`. Some frameworks also need trusted-origin settings; runany forwards the local Host header but does not edit project configuration. Quick Tunnels have no uptime guarantee and do not support Server-Sent Events; see the [provider's limits](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/#limitations).
+
+The default provider is `cloudflare` (`--tunnel cloudflare`). Providers are separate modules; no runner-specific publishing logic or extra npm runtime dependency is required.
 
 ## Development
 
