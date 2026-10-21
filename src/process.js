@@ -24,11 +24,14 @@ function escapeWindowsArg(value, doubleEscape) {
 
 export function spawnSpec(bin, args, cwd, platform = process.platform, env = process.env) {
   if (platform !== 'win32') return { bin, args };
-  const extensions = (env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';');
+  // Package managers also ship extensionless POSIX scripts next to their
+  // Windows shims. Only consider executable PATHEXT entries for bare names.
+  const extensions = path.win32.extname(bin) ? ['']
+    : (env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
   const directories = /[\\/]/.test(bin) ? [''] : [cwd, ...(env.PATH || env.Path || '').split(';')];
   let resolved;
   for (const directory of directories) {
-    for (const extension of ['', ...extensions]) {
+    for (const extension of extensions) {
       const file = path.win32.resolve(cwd, directory, bin + extension);
       if (existsSync(file)) { resolved = file; break; }
     }

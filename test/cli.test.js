@@ -5,6 +5,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSpec } from '../src/process.js';
 
 const cli = fileURLToPath(new URL('../bin/runa.js', import.meta.url));
 
@@ -95,6 +96,14 @@ test('unknown runner and absent executable have helpful errors', (t) => {
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /not installed or is not on PATH/);
   assert.match(invoke(cwd, 'unknown').stderr, /Unknown task/);
+});
+
+test('Windows resolves a cmd shim instead of a sibling POSIX script', { skip: process.platform !== 'win32' }, (t) => {
+  const cwd = fixture(t, { runner: '#!/bin/sh\n', 'runner.cmd': '@echo ok\r\n' });
+  const spec = spawnSpec('runner', [], cwd, 'win32', { PATHEXT: '.EXE;.CMD', PATH: cwd });
+  assert.equal(spec.bin, 'cmd.exe');
+  assert.match(spec.args.at(-1), /runner\.cmd/i);
+  assert.equal(spec.windowsVerbatimArguments, true);
 });
 
 test('non-interactive ambiguous default fails without hanging or guessing', (t) => {
