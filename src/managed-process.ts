@@ -77,6 +77,7 @@ export function startProcess(
     shell: false,
     windowsVerbatimArguments: spec.windowsVerbatimArguments,
   });
+  const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
   const exit = new Promise<ProcessExit>((resolve) => {
     for (const stream of ['stdout', 'stderr'] as const) {
       child[stream]?.setEncoding('utf8');
@@ -110,6 +111,20 @@ export function startProcess(
       stopping ??= (async () => {
         if (process.platform === 'win32') {
           await killWindowsTree(child);
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            await Promise.race([
+              closed,
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(
+                  () => reject(new Error(`${command.bin} did not finish stopping.`)),
+                  2000,
+                );
+              }),
+            ]);
+          } finally {
+            clearTimeout(timer);
+          }
           return;
         }
         killGroup(child, 'SIGTERM');
