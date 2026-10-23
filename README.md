@@ -1,21 +1,39 @@
-# runanything
+# runa
 
 [![CI](https://github.com/itIsMaku/runa/actions/workflows/ci.yml/badge.svg)](https://github.com/itIsMaku/runa/actions/workflows/ci.yml)
 
-One command to discover and run a project's tasks. Both `runa` and `runany` work.
+**Your projects, one terminal.** Discover how to run a project, manage its processes, watch live logs, and share localhost with a public URL. Works on macOS, Linux, and Windows.
+
+![runa TUI showing running projects, live logs, and a public preview URL](docs/assets/tui.svg)
+
+_Example dashboard with demo projects and logs, rendered by runa's actual TUI. The preview URL is illustrative._
+
+[Install](#install-locally) · [Dashboard](#process-dashboard) · [Agent commands](#agent-control-codex-claude-and-scripts) · [Supported projects](#detection)
 
 ```sh
 cd my-project
-runa                        # Open the process dashboard
-runa --run                  # Detect and run the default task in the foreground
-runa test                   # Run a named task
-runa --list                 # Discover available tasks
-runa --dry-run              # Preview the command
-runa -- --port 3000          # Forward arguments to the default task
-runa make:dev               # Select a specific runner
-runa --choose               # Pick a task interactively
-runa -C ../another-project   # Use a different directory
-runa --publish              # Share a running app through a temporary public URL
+runa                         # Open the dashboard; press n to detect and start a task
+```
+
+- **Detect the command.** Discover tasks from package.json, Make, Compose, Python, Rust, Go, .NET, or your own configuration.
+- **Keep an overview.** Switch between projects and their logs, stop or restart a process, and reconnect after closing the dashboard.
+- **Share a preview.** Publish an existing app through a temporary Cloudflare URL, then stop sharing while keeping the app running.
+- **Let agents do the work.** Codex, Claude, and scripts can start tasks, read logs, and control the same processes through the JSON CLI while you watch the TUI.
+
+Both `runa` and `runany` work. Use direct commands for foreground tasks and the agent CLI for automation:
+
+```sh
+runa --run                   # Detect and run the default task in the foreground
+runa test                    # Run a named task
+runa --list                  # Discover available tasks
+runa --dry-run               # Preview the command
+runa -- --port 3000           # Forward arguments to the default task
+runa make:dev                # Select a specific runner
+runa --choose                # Pick a task interactively
+runa -C ../another-project    # Open the dashboard in a different directory
+runa --publish               # Start the default app and share it through a public URL
+runa agent start --wait-ready # Start a managed HTTP app; return its ID and status as JSON
+runa agent logs PROCESS_ID   # Read a managed process's logs as JSON
 ```
 
 ## Install locally
@@ -27,7 +45,7 @@ git clone https://github.com/itIsMaku/runa.git
 cd runa
 npm ci
 npm install --global .
-runa --help
+runa
 ```
 
 Or try it without installing:
