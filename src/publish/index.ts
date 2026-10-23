@@ -2,6 +2,7 @@ import { constants } from 'node:os';
 import { type ManagedProcess, startProcess } from '../managed-process.js';
 import type { ExecutableCommand } from '../types.js';
 import { findLocalUrl, localTarget, portIsOpen, waitForHttp } from './local-url.js';
+import { ensureProvider, InstallDeclined } from './provider-setup.js';
 import { findTunnelProvider } from './providers/index.js';
 import type { PublishOptions, TunnelProvider } from './types.js';
 
@@ -53,26 +54,6 @@ export function publishPlan(port: number | undefined, provider: TunnelProvider, 
   };
 }
 
-async function checkProvider(
-  provider: TunnelProvider,
-  cwd: string,
-  aborted: Promise<never>,
-  signal: AbortSignal,
-): Promise<void> {
-  const probe = startProcess(provider.checkCommand(cwd));
-  try {
-    const result = await Promise.race([
-      timeout(probe.exit, 10000, `Checking ${provider.id} timed out.`, signal),
-      aborted,
-    ]);
-    if (result.error || result.code !== 0) {
-      throw new Error(`${provider.id} tunnel is unavailable. ${provider.installHint}`);
-    }
-  } finally {
-    await probe.stop();
-  }
-}
-
 /** Start an app and a temporary public tunnel; own and clean up both process trees. */
 export async function publish(
   command: ExecutableCommand,
@@ -107,7 +88,7 @@ export async function publish(
   try {
     const explicitTarget = options.port === undefined ? undefined : localTarget(options.port);
     signal.throwIfAborted();
-    await checkProvider(provider, command.cwd, aborted, signal);
+    await ensureProvider(provider, command.cwd, options, signal, message);
     signal.throwIfAborted();
     if (explicitTarget && (await portIsOpen(explicitTarget))) {
       throw new Error(
@@ -207,6 +188,13 @@ export async function publish(
     await Promise.race([appExited, tunnelExited, aborted]);
     return 0;
   } catch (error) {
+    if (signal.aborted && signal.reason instanceof Interrupted) {
+      return signal.reason.code;
+    }
+    if (error instanceof InstallDeclined) {
+      message('Sharing cancelled. No application or tunnel was started.');
+      return 0;
+    }
     if (error instanceof AppExited && error.code === 0 && !shared) {
       throw new Error(
         'Application exited before it could be shared. Choose a long-running web task.',

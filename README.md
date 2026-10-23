@@ -91,11 +91,15 @@ runa test --dry-run --json
 
 ## Share a localhost preview
 
-Install [cloudflared](https://developers.cloudflare.com/tunnel/downloads/) once (on macOS: `brew install cloudflared`). Then, in a web project:
+In a web project:
 
 ```sh
 runa --publish
 ```
+
+If `cloudflared` is missing, an interactive terminal offers to install it and shows the exact command first, for example `brew install cloudflared` on macOS. Answer `y` to install, verify the tool, and continue sharing in the same invocation. Answer `n`, press Enter, or press Ctrl+C to cancel before the app starts. Homebrew is supported on macOS/Linux when already installed; Windows uses WinGet when available. The package manager's own prompts and progress remain visible. If no supported manager is available, install [cloudflared manually](https://developers.cloudflare.com/tunnel/downloads/).
+
+Non-interactive commands and dry runs never install or wait for consent. A failed installation or failed verification stops before the app starts; an installed tool with a failing version check is reported without offering a reinstall.
 
 runany starts the selected task, detects a loopback URL from its startup output, waits for an HTTP response, and starts a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/). The terminal prints a temporary HTTPS URL such as `https://random-name.trycloudflare.com` to share with a friend. A Cloudflare account or domain is not required. Anyone with that URL can access the app; Ctrl+C stops the app and tunnel. The URL changes on the next run.
 

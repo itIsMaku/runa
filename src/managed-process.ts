@@ -7,6 +7,7 @@ import type { ExecutableCommand } from './types.js';
 export interface ProcessExit {
   readonly code: number;
   readonly error?: Error;
+  readonly notFound?: boolean;
 }
 
 export interface ManagedProcess {
@@ -16,6 +17,7 @@ export interface ManagedProcess {
 
 interface ProcessOptions {
   readonly stdin?: 'inherit' | 'ignore';
+  readonly inheritOutput?: boolean;
   readonly onOutput?: (output: string, stream: 'stdout' | 'stderr') => void;
 }
 
@@ -58,7 +60,11 @@ export function startProcess(
   const spec = spawnSpec(command.bin, command.args, command.cwd);
   const child = spawn(spec.bin, spec.args, {
     cwd: command.cwd,
-    stdio: [options.stdin ?? 'ignore', 'pipe', 'pipe'],
+    stdio: [
+      options.stdin ?? 'ignore',
+      options.inheritOutput ? 'inherit' : 'pipe',
+      options.inheritOutput ? 'inherit' : 'pipe',
+    ],
     detached: process.platform !== 'win32',
     windowsHide: true,
     shell: false,
@@ -78,6 +84,7 @@ export function startProcess(
     child.once('error', (error: NodeJS.ErrnoException) => {
       resolve({
         code: 1,
+        notFound: error.code === 'ENOENT',
         error: new Error(
           error.code === 'ENOENT'
             ? `"${command.bin}" is not installed or is not on PATH.`

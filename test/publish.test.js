@@ -240,6 +240,84 @@ test('does not start or publish an app when the provider is missing', async (t) 
   assert.equal(existsSync(path.join(cwd, 'tunnel-target')), false);
 });
 
+test('after an approved installation the same publish call starts the app and tunnel', {
+  timeout: 15000,
+}, async (t) => {
+  const cwd = fixture(t);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  let approvals = 0;
+  const installable = provider({
+    checkCommand: (directory) =>
+      existsSync(path.join(directory, 'installed'))
+        ? command(directory, '-e', ['process.exit(0)'])
+        : { bin: 'runa-missing-install-tool-123', args: [], cwd: directory },
+    installers: [
+      {
+        id: 'fixture-manager',
+        platforms: [process.platform],
+        checkCommand: (directory) => command(directory, '-e', ['process.exit(0)']),
+        installCommand: (directory) =>
+          command(directory, '-e', ['require("node:fs").writeFileSync("installed", "yes")']),
+      },
+    ],
+  });
+  const code = await publish(
+    command(cwd, 'app.cjs'),
+    options({
+      signal: controller.signal,
+      async confirmInstall() {
+        approvals++;
+        assert.equal(existsSync(path.join(cwd, 'app-port')), false);
+        return true;
+      },
+      onPublicUrl: () => controller.abort(),
+    }),
+    installable,
+  );
+  assert.equal(code, 130);
+  assert.equal(approvals, 1);
+  assert.equal(existsSync(path.join(cwd, 'installed')), true);
+  assert.equal(existsSync(path.join(cwd, 'tunnel-target')), true);
+});
+
+test('Ctrl+C during an install question returns 130 even when readline rejects with AbortError', async (t) => {
+  const cwd = fixture(t);
+  const controller = new AbortController();
+  const installable = provider({
+    checkCommand: (directory) => ({
+      bin: 'runa-missing-install-tool-123',
+      args: [],
+      cwd: directory,
+    }),
+    installers: [
+      {
+        id: 'fixture-manager',
+        platforms: [process.platform],
+        checkCommand: (directory) => command(directory, '-e', ['process.exit(0)']),
+        installCommand: (directory) =>
+          command(directory, '-e', ['require("node:fs").writeFileSync("installed", "yes")']),
+      },
+    ],
+  });
+  assert.equal(
+    await publish(
+      command(cwd, 'app.cjs'),
+      options({
+        signal: controller.signal,
+        async confirmInstall() {
+          controller.abort();
+          throw new DOMException('The operation was aborted', 'AbortError');
+        },
+      }),
+      installable,
+    ),
+    130,
+  );
+  assert.equal(existsSync(path.join(cwd, 'installed')), false);
+  assert.equal(existsSync(path.join(cwd, 'app-port')), false);
+});
+
 test('refuses to publish a pre-existing service on an explicit port', async (t) => {
   const cwd = fixture(t);
   const server = http.createServer((_req, res) => res.end('existing service'));

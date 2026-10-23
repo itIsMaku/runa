@@ -96,6 +96,8 @@ For isolated tests, inject a runner list as the third argument to `detect(direct
 
 Implement `TunnelProvider` in `src/publish/providers/`, then register it in that directory's `index.ts`. A provider defines its availability check, install hint, command for a loopback target, and public-URL parser. App startup, HTTP readiness, timeouts, signal handling, and cleanup stay in the shared publish session. The CLI selects providers with `--tunnel <id>`; project runners need no changes.
 
+A provider can supply optional `ProviderInstaller` definitions with supported platforms, package-manager availability checks, install commands, and new PATH entries. Missing dependencies are installed only after the interactive CLI's `confirmInstall` callback approves the displayed command. Library callers omit this callback by default. Setup verifies the dependency again before starting the app; failed or declined installations never continue. Tests use fixture installers and never install system packages.
+
 `publish(command, options, provider)` accepts an injected provider and an optional AbortSignal for programmatic cancellation. Use a local test proxy for integration tests rather than creating public Internet tunnels. `test/publish.test.js` verifies actual HTTP forwarding and cleanup, including subprocess trees and failure paths. Live Cloudflare availability is not a dependency of CI.
 
 ## Build and package checks

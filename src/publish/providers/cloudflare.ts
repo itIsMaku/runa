@@ -1,9 +1,11 @@
 import type { TunnelProvider } from '../types.js';
+import { cloudflareInstallers } from './cloudflare-installers.js';
 
 export const cloudflare: TunnelProvider = {
   id: 'cloudflare',
   installHint:
     'Install cloudflared: https://developers.cloudflare.com/tunnel/downloads/ (macOS: brew install cloudflared).',
+  installers: cloudflareInstallers,
   checkCommand: (cwd) => ({ bin: 'cloudflared', args: ['--version'], cwd }),
   createCommand: (target, cwd) => ({
     bin: 'cloudflared',

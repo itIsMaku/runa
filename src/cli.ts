@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline/promises';
 import { detect, select } from './detect.js';
 import { execute, formatCommand, run } from './process.js';
 import { findTunnelProvider, publish, publishPlan } from './publish/index.js';
+import { promptForInstall } from './publish/install-prompt.js';
 import { validatePort } from './publish/local-url.js';
 import type { Project } from './types.js';
 
@@ -196,7 +197,14 @@ export async function main(argv: readonly string[]): Promise<number> {
       }
       return 0;
     }
-    return publish(command, { port: options.port }, provider);
+    return publish(
+      command,
+      {
+        port: options.port,
+        confirmInstall: process.stdin.isTTY && process.stderr.isTTY ? promptForInstall : undefined,
+      },
+      provider,
+    );
   }
   return options.dryRun ? 0 : run(command);
 }
