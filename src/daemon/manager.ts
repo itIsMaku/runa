@@ -17,14 +17,19 @@ interface Entry {
   sharing?: Promise<void>;
   controller?: AbortController;
   stopping?: Promise<void>;
+  restarting?: Promise<void>;
 }
 
 export class ProcessManager {
   private readonly entries = new Map<string, Entry>();
+  private closing = false;
 
   constructor(private readonly provider: TunnelProvider = findTunnelProvider()) {}
 
   start(definition: ProcessDefinition): ProcessInfo {
+    if (this.closing) {
+      throw new Error('Process manager is shutting down.');
+    }
     if (this.entries.size >= 100) {
       throw new Error('Process history is full. Remove stopped processes first (d).');
     }
@@ -131,9 +136,22 @@ export class ProcessManager {
 
   async restart(id: string): Promise<void> {
     const entry = this.get(id);
-    await this.stop(id);
-    entry.stopping = undefined;
-    this.launch(entry);
+    if (entry.restarting) {
+      return entry.restarting;
+    }
+    entry.restarting = (async () => {
+      await this.stop(id);
+      if (this.closing) {
+        throw new Error('Process manager is shutting down.');
+      }
+      entry.stopping = undefined;
+      this.launch(entry);
+    })();
+    try {
+      await entry.restarting;
+    } finally {
+      entry.restarting = undefined;
+    }
   }
 
   remove(id: string): void {
@@ -216,6 +234,7 @@ export class ProcessManager {
   }
 
   async close(): Promise<void> {
+    this.closing = true;
     await Promise.all([...this.entries.keys()].map((id) => this.stop(id)));
   }
 }

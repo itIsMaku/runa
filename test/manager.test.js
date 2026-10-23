@@ -75,7 +75,7 @@ test('manager captures logs and environment, keeps independent tasks, and suppor
     manager.snapshot().processes.find((item) => item.id === second.id).status,
     'running',
   );
-  await manager.restart(entry.id);
+  await Promise.all([manager.restart(entry.id), manager.restart(entry.id)]);
   await waitFor(
     () => manager.snapshot().processes.find((item) => item.id === entry.id),
     (item) => item.localUrl && item.status === 'running',
