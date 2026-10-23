@@ -57,9 +57,16 @@ export function startProcess(
   command: ExecutableCommand,
   options: ProcessOptions = {},
 ): ManagedProcess {
-  const spec = spawnSpec(command.bin, command.args, command.cwd);
+  const spec = spawnSpec(
+    command.bin,
+    command.args,
+    command.cwd,
+    process.platform,
+    command.env ?? process.env,
+  );
   const child = spawn(spec.bin, spec.args, {
     cwd: command.cwd,
+    env: command.env,
     stdio: [
       options.stdin ?? 'ignore',
       options.inheritOutput ? 'inherit' : 'pipe',

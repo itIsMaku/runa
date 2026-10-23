@@ -39,6 +39,8 @@ The repository includes EditorConfig settings and recommends the Biome VS Code e
 | `src/publish/`           | Readiness, temporary sharing, and tunnel providers            |
 | `src/managed-process.ts` | Supervise and stop process trees while observing output       |
 | `src/cli.ts`             | CLI parsing and presentation                                  |
+| `src/daemon/`            | Shared supervision, bounded logs, and authenticated local RPC |
+| `src/tui/`               | Terminal rendering, key handling, and installation UX         |
 
 Discovery only returns command data. Runner-specific argument separators, explicit defaults, name overrides, and startup preferences are metadata on tasks; the core does not branch on runner names or executables. The built-in registry is explicit, with no directory scanning or dynamic loading of project code.
 
@@ -99,6 +101,16 @@ Implement `TunnelProvider` in `src/publish/providers/`, then register it in that
 A provider can supply optional `ProviderInstaller` definitions with supported platforms, package-manager availability checks, install commands, and new PATH entries. Missing dependencies are installed only after the interactive CLI's `confirmInstall` callback approves the displayed command. Library callers omit this callback by default. Setup verifies the dependency again before starting the app; failed or declined installations never continue. Tests use fixture installers and never install system packages.
 
 `publish(command, options, provider)` accepts an injected provider and an optional AbortSignal for programmatic cancellation. Use a local test proxy for integration tests rather than creating public Internet tunnels. `test/publish.test.js` verifies actual HTTP forwarding and cleanup, including subprocess trees and failure paths. Live Cloudflare availability is not a dependency of CI.
+
+`openTunnel` is shared by foreground and dashboard publishing. It attaches to an existing HTTP origin and owns only the tunnel process. Dashboard publishing keeps the app alive when sharing is stopped or fails. Installer confirmation stays in the terminal client so the background manager never runs an interactive installer without a user present.
+
+## Dashboard development
+
+The dashboard uses Node's keypress events and ANSI alternate-screen rendering without npm runtime dependencies. Bare interactive `runa` opens it; direct task commands remain foreground invocations. Use `RUNA_STATE_DIR` to isolate a test manager from your real processes, and run `runa --shutdown` in the same environment when finished.
+
+`ProcessManager` owns process/tunnel lifetimes independently of clients. RPC snapshots contain process metadata and bounded logs for one selected process; captured task environments stay private to the manager. The loopback server requires the token from the user's discovery file. Concurrent clients share a single daemon through an exclusive startup lock. Keep project detection and execution separate from rendering code.
+
+`test/manager.test.js` verifies supervision, environment capture, restart, bounded logs, and publishing without app restarts. `test/daemon.test.js` verifies shared clients and local authentication. `test/tui.test.js` checks rendering, narrow layouts, and terminal-output sanitization. For manual testing, exercise start, detach/reconnect from a second directory, selection, log scrolling, publish/unpublish, restart, and shutdown confirmation in a real terminal.
 
 ## Build and package checks
 

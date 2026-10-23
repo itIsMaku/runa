@@ -6,7 +6,8 @@ One command to discover and run a project's tasks. Both `runa` and `runany` work
 
 ```sh
 cd my-project
-runa                        # Detect and run the default task
+runa                        # Open the process dashboard
+runa --run                  # Detect and run the default task in the foreground
 runa test                   # Run a named task
 runa --list                 # Discover available tasks
 runa --dry-run              # Preview the command
@@ -36,6 +37,36 @@ node /path/to/runa/dist/bin.js -C /path/to/your-project --dry-run
 ```
 
 The package is named `runanything-cli` locally; it has not been published to npm by this project. Use the repository installation above. The CLI is designed for macOS, Linux, and Windows. GitHub Actions checks all three systems with Node.js 20, 22, and 24.
+
+## Process dashboard
+
+Run `runa` in an interactive terminal to open the dashboard. It shows managed processes on the left and live logs for the selected process on the right, with colored status indicators and a public URL when sharing is enabled. Narrow terminals use a stacked layout.
+
+| Key                    | Action                                                        |
+| ---------------------- | ------------------------------------------------------------- |
+| `n`                    | Detect tasks in the current directory and choose one to start |
+| `↑` / `↓`              | Select a process and switch its log view                      |
+| `s`                    | Stop the selected process and its tunnel                      |
+| `r`                    | Restart the selected process                                  |
+| `p`                    | Start or stop sharing the selected running app                |
+| `d`                    | Remove a stopped process from history                         |
+| `PgUp` / `PgDn`, `End` | Browse scrollback or return to live logs                      |
+| `q`, Esc, Ctrl+C       | Detach, keeping managed apps and tunnels running              |
+| `Q`, then `y`          | Stop all managed apps and tunnels and close the dashboard     |
+
+Processes started from the dashboard belong to a background manager shared by your terminals. Close the dashboard, change to another project, and run `runa` again to see the same processes and logs. Pressing `n` always discovers tasks in the directory where that dashboard was opened. Task environments are captured from the terminal that starts them. Logs and process history are bounded and kept in memory for the manager's lifetime; there is no automatic reboot recovery or task restart.
+
+Publishing an existing process does not restart its app. If a loopback URL was detected in its logs, `p` uses that origin; otherwise it asks for the app's port. A missing `cloudflared` keeps the installation confirmation flow, temporarily handing the terminal to the installer. Turning off sharing leaves the app running. Closing the dashboard leaves public tunnels running too; use `p`, `s`, `Q`, or `runa --shutdown` to stop them.
+
+Direct commands such as `runa test`, `runa --run`, and `runa --publish` remain foreground commands and are not adopted into the dashboard. In non-interactive environments, bare `runa` keeps its previous foreground behavior. `runa --tui` explicitly requests the dashboard and requires a terminal. Input in managed tasks belongs to the dashboard; use foreground commands for applications that require interactive stdin. Keep managed servers in the foreground instead of daemonizing themselves.
+
+```sh
+runa --tui -C ../my-project
+runa --run
+runa --shutdown
+```
+
+The manager exits after a minute with no active tasks or clients. `runa --shutdown` stops its tasks and removes its discovery files. State lives under the user's application state directory; `RUNA_STATE_DIR` can override it for isolated sessions and tests. The manager listens only on loopback and authenticates local requests with a private token.
 
 ## Detection
 

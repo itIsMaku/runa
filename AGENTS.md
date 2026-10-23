@@ -3,7 +3,6 @@
 ## Commit messages
 
 Use [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) for all new commits in this repository.
-
 - Format: `type(scope): description`. The scope is optional; add `!` immediately before `:` for a breaking change.
 - Use `feat` for new features and `fix` for bug fixes. Other suitable types include `docs`, `refactor`, `test`, `build`, `ci`, `style`, `perf`, and `chore`.
 - Write concise English descriptions and lowercase types. Choose a scope that identifies the affected area when useful.

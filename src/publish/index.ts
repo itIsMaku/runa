@@ -4,6 +4,7 @@ import type { ExecutableCommand } from '../types.js';
 import { findLocalUrl, localTarget, portIsOpen, waitForHttp } from './local-url.js';
 import { ensureProvider, InstallDeclined } from './provider-setup.js';
 import { findTunnelProvider } from './providers/index.js';
+import { openTunnel } from './tunnel.js';
 import type { PublishOptions, TunnelProvider } from './types.js';
 
 export { findTunnelProvider, tunnelProviders } from './providers/index.js';
@@ -83,7 +84,7 @@ export async function publish(
     options.onOutput ??
     ((text: string, stream: 'stdout' | 'stderr') => process[stream].write(text));
   let app: ManagedProcess | undefined;
-  let tunnel: ManagedProcess | undefined;
+  let tunneling: Promise<void> | undefined;
   let shared = false;
   try {
     const explicitTarget = options.port === undefined ? undefined : localTarget(options.port);
@@ -150,42 +151,23 @@ export async function publish(
     message(
       `Sharing ${target} via ${provider.id}. Anyone with the URL can access this app. Ctrl+C stops sharing.`,
     );
-    let resolveUrl: (url: string) => void = () => {};
-    const urlDetected = new Promise<string>((resolve) => {
-      resolveUrl = resolve;
-    });
-    const tunnelOutput = { stdout: '', stderr: '' };
-    tunnel = startProcess(provider.createCommand(target, command.cwd), {
-      onOutput(text, stream) {
-        output(text, 'stderr');
-        tunnelOutput[stream] = (tunnelOutput[stream] + text).slice(-32768);
-        const url = provider.findPublicUrl(tunnelOutput[stream]);
-        if (url) {
-          resolveUrl(url);
-        }
+    tunneling = openTunnel(
+      target,
+      command.cwd,
+      {
+        ...options,
+        onMessage: message,
+        onOutput: (text) => output(text, 'stderr'),
+        onPublicUrl: (url) => {
+          shared = true;
+          options.onPublicUrl?.(url);
+        },
       },
-    });
-    const tunnelExited = tunnel.exit.then((result): never => {
-      throw (
-        result.error ??
-        new Error(`${provider.id} tunnel exited with code ${result.code}. Sharing stopped.`)
-      );
-    });
-    const url = await Promise.race([
-      timeout(
-        urlDetected,
-        options.tunnelTimeoutMs ?? 30000,
-        `${provider.id} did not provide a public URL in time. Check its output and network connection.`,
-        signal,
-      ),
-      appExited,
-      tunnelExited,
-      aborted,
-    ]);
-    message(`Public URL: ${url}`);
-    shared = true;
-    options.onPublicUrl?.(url);
-    await Promise.race([appExited, tunnelExited, aborted]);
+      provider,
+      signal,
+      command.env,
+    );
+    await Promise.race([tunneling, appExited, aborted]);
     return 0;
   } catch (error) {
     if (signal.aborted && signal.reason instanceof Interrupted) {
@@ -206,7 +188,7 @@ export async function publish(
     throw error;
   } finally {
     controller.abort();
-    await Promise.allSettled([tunnel?.stop(), app?.stop()]);
+    await Promise.allSettled([tunneling, app?.stop()]);
     for (const [name, handler] of handlers) {
       process.off(name, handler);
     }
