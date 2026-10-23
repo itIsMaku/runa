@@ -1,5 +1,6 @@
 export { createContext } from './context.js';
 export { detect, select } from './detect.js';
+export { RunaError } from './errors.js';
 export { packageManagers } from './package-managers/index.js';
 export { execute, formatCommand, run } from './process.js';
 export { findTunnelProvider, publish, publishPlan, tunnelProviders } from './publish/index.js';

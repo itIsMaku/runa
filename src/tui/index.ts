@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { emitKeypressEvents, type Key } from 'node:readline';
 import { connectDaemon } from '../daemon/client.js';
 import type { ProcessInfo, Snapshot } from '../daemon/types.js';
@@ -8,7 +9,8 @@ import { ensureProvider } from '../publish/provider-setup.js';
 import { findTunnelProvider } from '../publish/providers/index.js';
 import { type DashboardModel, type Modal, renderDashboard } from './render.js';
 
-export async function runDashboard(cwd: string): Promise<number> {
+export async function runDashboard(directory: string): Promise<number> {
+  const cwd = path.resolve(directory);
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(
       'The dashboard requires an interactive terminal. Use runa --list or runa --run instead.',

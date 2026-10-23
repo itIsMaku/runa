@@ -4,6 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { isRecord } from '../context.js';
 import { detect, select } from '../detect.js';
+import { RunaError } from '../errors.js';
 import { execute } from '../process.js';
 import { ProcessManager } from './manager.js';
 import { claimLock, releaseState, stateDirectory } from './state.js';
@@ -33,7 +34,7 @@ export async function runDaemon(directory = stateDirectory()): Promise<void> {
       request.url !== '/rpc' ||
       request.headers.authorization !== `Bearer ${token}`
     ) {
-      response.writeHead(403).end(JSON.stringify({ error: 'Unauthorized.' }));
+      response.writeHead(403).end(JSON.stringify({ error: 'Unauthorized.', code: 'UNAUTHORIZED' }));
       return;
     }
     try {
@@ -52,7 +53,7 @@ export async function runDaemon(directory = stateDirectory()): Promise<void> {
       activity = Date.now();
       let result: unknown = {};
       if (data.action === 'ping') {
-        result = { protocol: 1 };
+        result = { protocol: 1, agentApiVersion: 1 };
       } else if (data.action === 'snapshot') {
         result = manager.snapshot(typeof data.selected === 'string' ? data.selected : undefined);
       } else if (
@@ -65,9 +66,19 @@ export async function runDaemon(directory = stateDirectory()): Promise<void> {
         if (!task) {
           throw new Error('Task not found.');
         }
+        if (
+          data.args !== undefined &&
+          (!Array.isArray(data.args) ||
+            data.args.some((arg: unknown) => typeof arg !== 'string' || arg.includes('\0')))
+        ) {
+          throw new RunaError('INVALID_ARGUMENT', 'Task arguments must be an array of strings.');
+        }
         result = manager.start({
           task: task.id,
-          command: { ...execute(task, [], project.cwd), env: environment(data.env) },
+          command: {
+            ...execute(task, (data.args as string[] | undefined) ?? [], project.cwd),
+            env: environment(data.env),
+          },
         });
       } else if (data.action === 'shutdown') {
         await shutdown();
@@ -75,6 +86,18 @@ export async function runDaemon(directory = stateDirectory()): Promise<void> {
         return;
       } else if (typeof data.id === 'string') {
         switch (data.action) {
+          case 'inspect':
+            result = manager.inspect(data.id);
+            break;
+          case 'logs':
+            if (
+              (data.after !== undefined && typeof data.after !== 'number') ||
+              (data.limit !== undefined && typeof data.limit !== 'number')
+            ) {
+              throw new RunaError('INVALID_ARGUMENT', 'Log cursor and limit must be numbers.');
+            }
+            result = manager.logs(data.id, data.after, data.limit);
+            break;
           case 'stop':
             await manager.stop(data.id);
             break;
@@ -101,9 +124,12 @@ export async function runDaemon(directory = stateDirectory()): Promise<void> {
       }
       response.end(JSON.stringify({ result }));
     } catch (error) {
-      response
-        .writeHead(400)
-        .end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      response.writeHead(400).end(
+        JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+          code: error instanceof RunaError ? error.code : 'INVALID_REQUEST',
+        }),
+      );
     }
   });
   const idle = setInterval(() => {

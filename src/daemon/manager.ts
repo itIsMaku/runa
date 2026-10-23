@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { RunaError } from '../errors.js';
 import { type ManagedProcess, startProcess } from '../managed-process.js';
 import { formatCommand } from '../process.js';
 import { findLocalUrl, localTarget, validatePort, waitForHttp } from '../publish/local-url.js';
@@ -7,7 +8,7 @@ import { findTunnelProvider } from '../publish/providers/index.js';
 import { openTunnel } from '../publish/tunnel.js';
 import type { TunnelProvider } from '../publish/types.js';
 import { LogBuffer } from './logs.js';
-import type { ProcessDefinition, ProcessInfo, Snapshot } from './types.js';
+import type { ProcessDefinition, ProcessInfo, ProcessLogs, Snapshot } from './types.js';
 
 interface Entry {
   info: ProcessInfo;
@@ -28,10 +29,13 @@ export class ProcessManager {
 
   start(definition: ProcessDefinition): ProcessInfo {
     if (this.closing) {
-      throw new Error('Process manager is shutting down.');
+      throw new RunaError('UNAVAILABLE', 'Process manager is shutting down.');
     }
     if (this.entries.size >= 100) {
-      throw new Error('Process history is full. Remove stopped processes first (d).');
+      throw new RunaError(
+        'LIMIT_REACHED',
+        'Process history is full. Remove stopped processes first (d).',
+      );
     }
     const id = randomUUID();
     const entry: Entry = {
@@ -107,7 +111,7 @@ export class ProcessManager {
   private get(id: string): Entry {
     const entry = this.entries.get(id);
     if (!entry) {
-      throw new Error('Process no longer exists.');
+      throw new RunaError('NOT_FOUND', 'Process no longer exists.');
     }
     return entry;
   }
@@ -117,6 +121,15 @@ export class ProcessManager {
       processes: [...this.entries.values()].map((entry) => entry.info),
       logs: selected ? (this.entries.get(selected)?.logs.snapshot() ?? []) : [],
     };
+  }
+
+  inspect(id: string): ProcessInfo {
+    return this.get(id).info;
+  }
+
+  logs(id: string, after?: number, limit?: number): ProcessLogs {
+    const entry = this.get(id);
+    return { process: entry.info, ...entry.logs.read(after, limit) };
   }
 
   async stop(id: string): Promise<void> {
@@ -142,7 +155,7 @@ export class ProcessManager {
     entry.restarting = (async () => {
       await this.stop(id);
       if (this.closing) {
-        throw new Error('Process manager is shutting down.');
+        throw new RunaError('UNAVAILABLE', 'Process manager is shutting down.');
       }
       entry.stopping = undefined;
       this.launch(entry);
@@ -157,7 +170,7 @@ export class ProcessManager {
   remove(id: string): void {
     const entry = this.get(id);
     if (['running', 'stopping'].includes(entry.info.status)) {
-      throw new Error('Stop the process before removing it.');
+      throw new RunaError('CONFLICT', 'Stop the process before removing it.');
     }
     this.entries.delete(id);
   }
@@ -165,14 +178,14 @@ export class ProcessManager {
   async publish(id: string, port: number | undefined, env: NodeJS.ProcessEnv): Promise<void> {
     const entry = this.get(id);
     if (entry.info.status !== 'running') {
-      throw new Error('Start the process before publishing it.');
+      throw new RunaError('CONFLICT', 'Start the process before publishing it.');
     }
     if (entry.sharing) {
-      throw new Error('This process is already sharing or connecting.');
+      throw new RunaError('CONFLICT', 'This process is already sharing or connecting.');
     }
     const target = port === undefined ? entry.info.localUrl : localTarget(validatePort(port));
     if (!target) {
-      throw new Error('No local URL detected. Specify the app port.');
+      throw new RunaError('NO_LOCAL_URL', 'No local URL detected. Specify the app port.');
     }
     const controller = new AbortController();
     entry.controller = controller;

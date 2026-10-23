@@ -30,10 +30,25 @@ export interface Snapshot {
   readonly logs: readonly LogEntry[];
 }
 
+export interface LogPage {
+  readonly logs: readonly LogEntry[];
+  readonly pending: Readonly<Partial<Record<LogEntry['stream'], string>>>;
+  readonly nextCursor: number;
+  readonly oldestSequence: number;
+  readonly truncated: boolean;
+  readonly hasMore: boolean;
+}
+
+export interface ProcessLogs extends LogPage {
+  readonly process: ProcessInfo;
+}
+
 export type DaemonRequest =
   | { action: 'ping' }
   | { action: 'snapshot'; selected?: string }
-  | { action: 'start'; cwd: string; task: string; env: NodeJS.ProcessEnv }
+  | { action: 'inspect'; id: string }
+  | { action: 'logs'; id: string; after?: number; limit?: number }
+  | { action: 'start'; cwd: string; task: string; args?: readonly string[]; env: NodeJS.ProcessEnv }
   | { action: 'stop' | 'restart' | 'remove' | 'unpublish'; id: string }
   | { action: 'publish'; id: string; port?: number; env: NodeJS.ProcessEnv }
   | { action: 'shutdown' };
@@ -46,7 +61,10 @@ export interface DaemonState {
 }
 
 export interface DaemonClient {
-  request<T = unknown>(request: DaemonRequest): Promise<T>;
+  request<T = unknown>(
+    request: DaemonRequest,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<T>;
 }
 
 export interface ProcessDefinition {

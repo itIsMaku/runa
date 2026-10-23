@@ -1,5 +1,6 @@
 import { stripVTControlCharacters } from 'node:util';
-import type { LogEntry } from './types.js';
+import { RunaError } from '../errors.js';
+import type { LogEntry, LogPage } from './types.js';
 
 /** Bounded scrollback, including partial progress lines and hostile terminal escapes. */
 export class LogBuffer {
@@ -48,5 +49,33 @@ export class LogBuffer {
         text,
       }));
     return [...this.entries, ...tail];
+  }
+
+  read(after?: number, limit = 100): LogPage {
+    if (
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 1000 ||
+      (after !== undefined && (!Number.isInteger(after) || after < 0 || after > this.sequence))
+    ) {
+      throw new RunaError(
+        'INVALID_ARGUMENT',
+        'Log limit must be 1–1000 and cursor must be a valid nonnegative sequence for this process.',
+      );
+    }
+    const logs =
+      after === undefined
+        ? this.entries.slice(-limit)
+        : this.entries.filter((entry) => entry.sequence > after).slice(0, limit);
+    const nextCursor = logs.at(-1)?.sequence ?? after ?? this.sequence;
+    const oldestSequence = this.entries[0]?.sequence ?? this.sequence;
+    return {
+      logs,
+      nextCursor,
+      oldestSequence,
+      pending: Object.fromEntries([...this.pending].filter(([, text]) => text)),
+      truncated: after !== undefined && after < oldestSequence - 1,
+      hasMore: nextCursor < this.sequence,
+    };
   }
 }

@@ -40,6 +40,7 @@ The repository includes EditorConfig settings and recommends the Biome VS Code e
 | `src/managed-process.ts` | Supervise and stop process trees while observing output       |
 | `src/cli.ts`             | CLI parsing and presentation                                  |
 | `src/daemon/`            | Shared supervision, bounded logs, and authenticated local RPC |
+| `src/agent/`             | Versioned JSON commands, cursor logs, and bounded waits       |
 | `src/tui/`               | Terminal rendering, key handling, and installation UX         |
 
 Discovery only returns command data. Runner-specific argument separators, explicit defaults, name overrides, and startup preferences are metadata on tasks; the core does not branch on runner names or executables. The built-in registry is explicit, with no directory scanning or dynamic loading of project code.
@@ -111,6 +112,14 @@ The dashboard uses Node's keypress events and ANSI alternate-screen rendering wi
 `ProcessManager` owns process/tunnel lifetimes independently of clients. RPC snapshots contain process metadata and bounded logs for one selected process; captured task environments stay private to the manager. The loopback server requires the token from the user's discovery file. Concurrent clients share a single daemon through an exclusive startup lock. Keep project detection and execution separate from rendering code.
 
 `test/manager.test.js` verifies supervision, environment capture, restart, bounded logs, and publishing without app restarts. `test/daemon.test.js` verifies shared clients and local authentication. `test/tui.test.js` checks rendering, narrow layouts, and terminal-output sanitization. For manual testing, exercise start, detach/reconnect from a second directory, selection, log scrolling, publish/unpublish, restart, and shutdown confirmation in a real terminal.
+
+## Agent API development
+
+`runa agent` is a non-interactive client of the same daemon RPC used by the dashboard. Keep its JSON envelope versioned and expose operations through `src/agent/schema.ts`; `capabilities` uses this registry. Machine commands must not write human progress messages, task output, ANSI escapes, or installation prompts to stdout. Wrap failures in a stable error code; do not leak stack traces or captured environments.
+
+Agent waits and follow streams accept bounded deadlines and cancellation. Cancelling a client must not kill managed apps. Cursor reads use completed log sequence numbers; partial output remains separate so polling never loses or duplicates completed lines. Retain sequence continuity across restarts. Changing the agent RPC requires an explicit capability/version check so older running daemons are not silently replaced while supervising user tasks.
+
+`test/agent.test.js` exercises the compiled CLI against an isolated daemon, with dashboard RPC snapshots proving both clients see the same state. It checks JSON discovery, argument forwarding, cursor reads, bounded following, readiness timeouts, exit codes, sharing, and lifecycle controls. Tunnel binaries in these fixtures are local fakes, with PATH isolated from real tools. Package smoke tests also verify agent discovery from the installed tarball.
 
 ## Build and package checks
 

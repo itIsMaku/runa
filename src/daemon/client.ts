@@ -3,12 +3,13 @@ import http from 'node:http';
 import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../context.js';
+import { RunaError } from '../errors.js';
 import { readState, stateDirectory } from './state.js';
 import type { DaemonClient, DaemonRequest, DaemonState } from './types.js';
 
 export function clientFor(state: DaemonState): DaemonClient {
   return {
-    request<T>(data: DaemonRequest): Promise<T> {
+    request<T>(data: DaemonRequest, options?: { readonly signal?: AbortSignal }): Promise<T> {
       return new Promise<T>((resolve, reject) => {
         const request = http.request(
           {
@@ -16,6 +17,7 @@ export function clientFor(state: DaemonState): DaemonClient {
             port: state.port,
             path: '/rpc',
             method: 'POST',
+            signal: options?.signal,
             headers: { Authorization: `Bearer ${state.token}`, 'Content-Type': 'application/json' },
           },
           (response) => {
@@ -28,7 +30,8 @@ export function clientFor(state: DaemonState): DaemonClient {
               try {
                 const reply: unknown = JSON.parse(body);
                 if (!isRecord(reply) || response.statusCode !== 200) {
-                  throw new Error(
+                  throw new RunaError(
+                    isRecord(reply) && typeof reply.code === 'string' ? reply.code : 'RPC_ERROR',
                     isRecord(reply) && typeof reply.error === 'string'
                       ? reply.error
                       : 'Process manager request failed.',
@@ -54,17 +57,20 @@ export function clientFor(state: DaemonState): DaemonClient {
 export async function connectDaemon(
   start = true,
   directory = stateDirectory(),
+  signal?: AbortSignal,
 ): Promise<DaemonClient | undefined> {
   let launched = 0;
   const deadline = Date.now() + (start ? 15000 : 1000);
   while (Date.now() < deadline) {
+    signal?.throwIfAborted();
     const state = readState(directory);
     if (state) {
       const client = clientFor(state);
       try {
-        await client.request({ action: 'ping' });
+        await client.request({ action: 'ping' }, { signal });
         return client;
       } catch {
+        signal?.throwIfAborted();
         // A daemon from an old terminal/session may no longer be alive.
       }
     }
@@ -86,7 +92,7 @@ export async function connectDaemon(
       child.unref();
       launched = Date.now();
     }
-    await setTimeout(100);
+    await setTimeout(100, undefined, { signal });
   }
   throw new Error(
     'Could not connect to the runa process manager. Check permissions in the runa state directory.',

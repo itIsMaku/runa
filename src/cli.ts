@@ -16,6 +16,7 @@ Usage: runa [task | runner:task] [options] [-- arguments...]
   runa make:dev                Choose a specific runner
   runa -- --port 3000           Forward arguments to the default task
   runa --publish               Start the app and share it through a public URL
+  runa agent --help            JSON controls for agents over the same process manager
 
 Options:
   --tui                        Open the process dashboard
@@ -168,6 +169,10 @@ export async function main(argv: readonly string[]): Promise<number> {
     const { runDaemon } = await import('./daemon/server.js');
     await runDaemon();
     return 0;
+  }
+  if (argv[0] === 'agent') {
+    const { runAgent } = await import('./agent/index.js');
+    return runAgent(argv.slice(1));
   }
   const options = parse(argv);
   if (options.help) {
