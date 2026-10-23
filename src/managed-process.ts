@@ -28,7 +28,10 @@ function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   try {
     process.kill(-child.pid, signal);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+    const code = (error as NodeJS.ErrnoException).code;
+    // Once the child has exited, an EPERM group is no longer ours to signal.
+    const finished = child.exitCode !== null || child.signalCode !== null;
+    if (code !== 'ESRCH' && !(code === 'EPERM' && finished)) {
       throw error;
     }
   }
@@ -131,7 +134,7 @@ export function startProcess(
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           await Promise.race([
-            exit,
+            closed,
             new Promise<void>((resolve) => {
               timer = setTimeout(resolve, 2000);
             }),
