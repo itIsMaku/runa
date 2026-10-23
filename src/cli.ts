@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { detect, select } from './detect.js';
 import { execute, formatCommand, run } from './process.js';
+import { findTunnelProvider, publish, publishPlan } from './publish/index.js';
+import { promptForInstall } from './publish/install-prompt.js';
+import { validatePort } from './publish/local-url.js';
 import type { Project } from './types.js';
 
 const help = `runa — discover and run a project's tasks
@@ -12,11 +15,15 @@ Usage: runa [task | runner:task] [options] [-- arguments...]
   runa test                    Run a named task
   runa make:dev                Choose a specific runner
   runa -- --port 3000           Forward arguments to the default task
+  runa --publish               Start the app and share it through a public URL
 
 Options:
   --list, -l                   List discovered tasks without executing them
   --dry-run                    Print the command without executing it
   --choose                     Choose a task interactively
+  --publish                    Share the app via a temporary Cloudflare tunnel
+  --port <port>                Local app port for --publish (otherwise auto-detect)
+  --tunnel <provider>           Tunnel provider for --publish (default: cloudflare)
   --cwd <directory>, -C <dir>   Use a different project directory
   --json                       Machine-readable output (with --list/--dry-run)
   --help, -h                   Show help
@@ -36,6 +43,9 @@ interface Options {
   dryRun?: boolean;
   choose?: boolean;
   json?: boolean;
+  publish?: boolean;
+  port?: number;
+  tunnel?: string;
 }
 
 function parse(argv: readonly string[]): Options {
@@ -61,6 +71,20 @@ function parse(argv: readonly string[]): Options {
       options.choose = true;
     } else if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--publish') {
+      options.publish = true;
+    } else if (arg === '--port') {
+      const value = argv[++index];
+      if (value === undefined) {
+        throw new Error('--port requires a local application port.');
+      }
+      options.port = validatePort(value);
+    } else if (arg === '--tunnel') {
+      const value = argv[++index];
+      if (!value || value.startsWith('-')) {
+        throw new Error('--tunnel requires a provider name.');
+      }
+      options.tunnel = value;
     } else if (['--cwd', '-C'].includes(arg)) {
       const value = argv[++index];
       if (!value || value.startsWith('-')) {
@@ -77,6 +101,12 @@ function parse(argv: readonly string[]): Options {
   }
   if (options.json && !options.list && !options.dryRun) {
     throw new Error('--json requires --list or --dry-run.');
+  }
+  if ((options.port !== undefined || options.tunnel !== undefined) && !options.publish) {
+    throw new Error('--port and --tunnel require --publish. Put application arguments after --.');
+  }
+  if (options.publish && options.list) {
+    throw new Error('--publish cannot be combined with --list.');
   }
   return options;
 }
@@ -145,11 +175,35 @@ export async function main(argv: readonly string[]): Promise<number> {
     throw new Error('No task selected.');
   }
   const command = execute(candidate, options.extra, project.cwd);
+  const provider = options.publish ? findTunnelProvider(options.tunnel) : undefined;
   if (options.json) {
-    console.log(JSON.stringify(command, null, 2));
+    const plan = provider
+      ? { ...command, publish: publishPlan(options.port, provider, project.cwd) }
+      : command;
+    console.log(JSON.stringify(plan, null, 2));
   } else {
     console[options.dryRun ? 'log' : 'error'](
       `runa: ${candidate.source} → ${formatCommand(command.bin, command.args)}`,
+    );
+  }
+  if (provider) {
+    if (options.dryRun) {
+      if (!options.json) {
+        const plan = publishPlan(options.port, provider, project.cwd);
+        console.log(`runa: Publish via ${plan.provider}: ${plan.target}`);
+        if (plan.tunnel) {
+          console.log(`runa: ${formatCommand(plan.tunnel.bin, plan.tunnel.args)}`);
+        }
+      }
+      return 0;
+    }
+    return publish(
+      command,
+      {
+        port: options.port,
+        confirmInstall: process.stdin.isTTY && process.stderr.isTTY ? promptForInstall : undefined,
+      },
+      provider,
     );
   }
   return options.dryRun ? 0 : run(command);

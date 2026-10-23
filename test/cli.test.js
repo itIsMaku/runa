@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -76,6 +85,123 @@ test('--list and --dry-run do not execute project code', (t) => {
   assert.equal(dryRun.status, 0, dryRun.stderr);
   assert.equal(JSON.parse(dryRun.stdout).args.at(-1), 'hello world');
   assert.equal(existsSync(path.join(cwd, 'MARKER')), false);
+});
+
+test('--publish dry-run previews automatic and explicit targets without executing anything', (t) => {
+  const cwd = fixture(t, {
+    '.runany.json': {
+      default: 'dev',
+      commands: { dev: [process.execPath, '-e', 'require("fs").writeFileSync("MARKER", "ran")'] },
+    },
+  });
+  const automatic = invoke(cwd, '--publish', '--dry-run', '--json');
+  assert.equal(automatic.status, 0, automatic.stderr);
+  assert.equal(JSON.parse(automatic.stdout).publish.provider, 'cloudflare');
+  assert.match(JSON.parse(automatic.stdout).publish.target, /auto/);
+  const explicit = invoke(cwd, '--publish', '--port', '3000', '--dry-run', '--json');
+  assert.equal(explicit.status, 0, explicit.stderr);
+  assert.equal(JSON.parse(explicit.stdout).publish.target, 'http://127.0.0.1:3000');
+  assert.equal(existsSync(path.join(cwd, 'MARKER')), false);
+});
+
+test('publish rejects invalid ports, unsupported providers, and incompatible flags', (t) => {
+  const cwd = fixture(t, { 'package.json': { scripts: { dev: 'node app.cjs' } } });
+  for (const args of [
+    ['--publish', '--port'],
+    ['--publish', '--port', '0'],
+    ['--publish', '--port', '65536'],
+    ['--publish', '--port', '-1'],
+    ['--publish', '--port', '3.5'],
+    ['--publish', '--tunnel'],
+    ['--publish', '--tunnel', 'missing', '--dry-run'],
+    ['--publish', '--list'],
+    ['--port', '3000'],
+    ['--tunnel', 'cloudflare'],
+  ]) {
+    const result = invoke(cwd, ...args);
+    assert.equal(result.status, 1, JSON.stringify(args));
+    assert.match(result.stderr, /runa:/);
+  }
+});
+
+test('--publish reports a missing cloudflared before launching the application', (t) => {
+  const cwd = fixture(t, {
+    '.runany.json': {
+      default: 'dev',
+      commands: { dev: [process.execPath, '-e', 'require("fs").writeFileSync("MARKER", "ran")'] },
+    },
+  });
+  const env = { ...process.env };
+  for (const key of Object.keys(env).filter((name) => name.toLowerCase() === 'path')) {
+    env[key] = cwd;
+  }
+  const result = spawnSync(process.execPath, [cli, '--publish'], {
+    cwd,
+    env,
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Install cloudflared/);
+  assert.equal(existsSync(path.join(cwd, 'MARKER')), false);
+});
+
+test('SIGINT stops a published CLI session and both servers', {
+  skip: process.platform === 'win32',
+  timeout: 15000,
+}, async (t) => {
+  const cwd = fixture(t, {
+    '.runany.json': { default: 'dev', commands: { dev: [process.execPath, 'app.cjs'] } },
+    'app.cjs': `
+      const http = require('node:http');
+      const fs = require('node:fs');
+      const server = http.createServer((_req, res) => res.end('app'));
+      server.listen(0, '127.0.0.1', () => {
+        fs.writeFileSync('app-port', String(server.address().port));
+        console.log('Local: http://127.0.0.1:' + server.address().port);
+      });
+    `,
+    cloudflared: `#!/usr/bin/env node
+      if (process.argv.includes('--version')) {
+        console.log('cloudflared fixture');
+      } else {
+        const http = require('node:http');
+        const fs = require('node:fs');
+        const server = http.createServer((_req, res) => res.end('tunnel'));
+        server.listen(0, '127.0.0.1', () => {
+          fs.writeFileSync('tunnel-port', String(server.address().port));
+          console.log('https://cli-test.trycloudflare.com');
+        });
+      }
+    `,
+  });
+  chmodSync(path.join(cwd, 'cloudflared'), 0o755);
+  const child = spawn(process.execPath, [cli, '--publish'], {
+    cwd,
+    env: { ...process.env, PATH: `${cwd}${path.delimiter}${process.env.PATH}` },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  const read = (chunk) => {
+    output += chunk;
+    if (output.includes('Public URL: https://cli-test.trycloudflare.com')) {
+      child.kill('SIGINT');
+    }
+  };
+  child.stdout.on('data', read);
+  child.stderr.on('data', read);
+  t.after(() => child.kill('SIGTERM'));
+  const code = await new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', resolve);
+  });
+  assert.equal(code, 130, output);
+  const { portIsOpen, localTarget } = await import('../dist/publish/local-url.js');
+  for (const file of ['app-port', 'tunnel-port']) {
+    const port = Number(readFileSync(path.join(cwd, file), 'utf8'));
+    assert.equal(await portIsOpen(localTarget(port)), false, `${file} was left running`);
+  }
 });
 
 test('executes in the project directory with literal arguments and preserves exit code', (t) => {
