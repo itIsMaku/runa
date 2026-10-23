@@ -90,10 +90,17 @@ export function execute<T extends Command>(
 }
 
 export async function run(command: ExecutableCommand): Promise<number> {
-  const spec = spawnSpec(command.bin, command.args, command.cwd);
+  const spec = spawnSpec(
+    command.bin,
+    command.args,
+    command.cwd,
+    process.platform,
+    command.env ?? process.env,
+  );
   return new Promise<number>((resolve, reject) => {
     const child = spawn(spec.bin, spec.args, {
       cwd: command.cwd,
+      env: command.env,
       stdio: 'inherit',
       shell: false,
       windowsVerbatimArguments: spec.windowsVerbatimArguments,

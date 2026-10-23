@@ -55,7 +55,7 @@ export async function portIsOpen(target: string): Promise<boolean> {
   });
 }
 
-async function responds(target: string, signal: AbortSignal): Promise<boolean> {
+export async function responds(target: string, signal: AbortSignal): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const request = (target.startsWith('https:') ? https : http).request(target, {
       method: 'HEAD',

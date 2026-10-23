@@ -28,7 +28,10 @@ function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   try {
     process.kill(-child.pid, signal);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+    const code = (error as NodeJS.ErrnoException).code;
+    // Once the child has exited, an EPERM group is no longer ours to signal.
+    const finished = child.exitCode !== null || child.signalCode !== null;
+    if (code !== 'ESRCH' && !(code === 'EPERM' && finished)) {
       throw error;
     }
   }
@@ -57,9 +60,16 @@ export function startProcess(
   command: ExecutableCommand,
   options: ProcessOptions = {},
 ): ManagedProcess {
-  const spec = spawnSpec(command.bin, command.args, command.cwd);
+  const spec = spawnSpec(
+    command.bin,
+    command.args,
+    command.cwd,
+    process.platform,
+    command.env ?? process.env,
+  );
   const child = spawn(spec.bin, spec.args, {
     cwd: command.cwd,
+    env: command.env,
     stdio: [
       options.stdin ?? 'ignore',
       options.inheritOutput ? 'inherit' : 'pipe',
@@ -70,6 +80,7 @@ export function startProcess(
     shell: false,
     windowsVerbatimArguments: spec.windowsVerbatimArguments,
   });
+  const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
   const exit = new Promise<ProcessExit>((resolve) => {
     for (const stream of ['stdout', 'stderr'] as const) {
       child[stream]?.setEncoding('utf8');
@@ -103,13 +114,27 @@ export function startProcess(
       stopping ??= (async () => {
         if (process.platform === 'win32') {
           await killWindowsTree(child);
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            await Promise.race([
+              closed,
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(
+                  () => reject(new Error(`${command.bin} did not finish stopping.`)),
+                  2000,
+                );
+              }),
+            ]);
+          } finally {
+            clearTimeout(timer);
+          }
           return;
         }
         killGroup(child, 'SIGTERM');
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           await Promise.race([
-            exit,
+            closed,
             new Promise<void>((resolve) => {
               timer = setTimeout(resolve, 2000);
             }),

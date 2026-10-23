@@ -39,6 +39,9 @@ The repository includes EditorConfig settings and recommends the Biome VS Code e
 | `src/publish/`           | Readiness, temporary sharing, and tunnel providers            |
 | `src/managed-process.ts` | Supervise and stop process trees while observing output       |
 | `src/cli.ts`             | CLI parsing and presentation                                  |
+| `src/daemon/`            | Shared supervision, bounded logs, and authenticated local RPC |
+| `src/agent/`             | Versioned JSON commands, cursor logs, and bounded waits       |
+| `src/tui/`               | Terminal rendering, key handling, and installation UX         |
 
 Discovery only returns command data. Runner-specific argument separators, explicit defaults, name overrides, and startup preferences are metadata on tasks; the core does not branch on runner names or executables. The built-in registry is explicit, with no directory scanning or dynamic loading of project code.
 
@@ -100,6 +103,24 @@ A provider can supply optional `ProviderInstaller` definitions with supported pl
 
 `publish(command, options, provider)` accepts an injected provider and an optional AbortSignal for programmatic cancellation. Use a local test proxy for integration tests rather than creating public Internet tunnels. `test/publish.test.js` verifies actual HTTP forwarding and cleanup, including subprocess trees and failure paths. Live Cloudflare availability is not a dependency of CI.
 
+`openTunnel` is shared by foreground and dashboard publishing. It attaches to an existing HTTP origin and owns only the tunnel process. Dashboard publishing keeps the app alive when sharing is stopped or fails. Installer confirmation stays in the terminal client so the background manager never runs an interactive installer without a user present.
+
+## Dashboard development
+
+The dashboard uses Node's keypress events and ANSI alternate-screen rendering without npm runtime dependencies. Bare interactive `runa` opens it; direct task commands remain foreground invocations. Use `RUNA_STATE_DIR` to isolate a test manager from your real processes, and run `runa --shutdown` in the same environment when finished.
+
+`ProcessManager` owns process/tunnel lifetimes independently of clients. RPC snapshots contain process metadata and bounded logs for one selected process; captured task environments stay private to the manager. The loopback server requires the token from the user's discovery file. Concurrent clients share a single daemon through an exclusive startup lock. Keep project detection and execution separate from rendering code.
+
+`test/manager.test.js` verifies supervision, environment capture, restart, bounded logs, and publishing without app restarts. `test/daemon.test.js` verifies shared clients and local authentication. `test/tui.test.js` checks rendering, narrow layouts, and terminal-output sanitization. For manual testing, exercise start, detach/reconnect from a second directory, selection, log scrolling, publish/unpublish, restart, and shutdown confirmation in a real terminal.
+
+## Agent API development
+
+`runa agent` is a non-interactive client of the same daemon RPC used by the dashboard. Keep its JSON envelope versioned and expose operations through `src/agent/schema.ts`; `capabilities` uses this registry. Machine commands must not write human progress messages, task output, ANSI escapes, or installation prompts to stdout. Wrap failures in a stable error code; do not leak stack traces or captured environments.
+
+Agent waits and follow streams accept bounded deadlines and cancellation. Cancelling a client must not kill managed apps. Cursor reads use completed log sequence numbers; partial output remains separate so polling never loses or duplicates completed lines. Retain sequence continuity across restarts. Changing the agent RPC requires an explicit capability/version check so older running daemons are not silently replaced while supervising user tasks.
+
+`test/agent.test.js` exercises the compiled CLI against an isolated daemon, with dashboard RPC snapshots proving both clients see the same state. It checks JSON discovery, argument forwarding, cursor reads, bounded following, readiness timeouts, exit codes, sharing, and lifecycle controls. Tunnel binaries in these fixtures are local fakes, with PATH isolated from real tools. Package smoke tests also verify agent discovery from the installed tarball.
+
 ## Build and package checks
 
 `npm ci` installs development tools and builds the CLI through `prepare`. `npm run check` type-checks without emitting files. `npm run test:package` creates a tarball, installs it into a temporary prefix with lifecycle scripts disabled, and verifies both CLI aliases and the compiled API. This ensures installed users do not need TypeScript or a build step. Do not commit generated `dist/` files.
@@ -110,4 +131,4 @@ Fork the repository and make your changes on a branch. Describe the problem, the
 
 For changes to detection or process execution, add a focused test using a temporary project. Discovery must read project files without executing project code. Keep macOS, Linux, and Windows behavior in mind, especially argument passing, paths with spaces, and exit codes. Update the README when adding support for a project type or changing CLI behavior.
 
-CI checks linting, formatting, types, tests, and package installation on all three operating systems. Contributions are made under the repository's [MIT license](LICENSE).
+CI checks linting, formatting, types, tests, and package installation on all three operating systems. It runs for pull requests and pushes to `main`, avoiding duplicate branch-push and PR runs. A newer push cancels an older run for the same ref. Contributions are made under the repository's [MIT license](LICENSE).

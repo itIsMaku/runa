@@ -55,6 +55,13 @@ try {
     assert.match(invoke(executable, ['--help'], temporary), /Usage: runa/);
   }
   const entry = path.join(installed, 'dist/bin.js');
+  const capabilities = JSON.parse(invoke(process.execPath, [entry, 'agent', 'capabilities']));
+  assert.equal(capabilities.ok, true);
+  assert.equal(capabilities.result.agentApiVersion, 1);
+  const discovered = JSON.parse(
+    invoke(process.execPath, [entry, 'agent', 'discover', '-C', installed]),
+  );
+  assert.ok(discovered.result.candidates.some((task) => task.id === 'npm:build'));
   const listed = JSON.parse(invoke(process.execPath, [entry, '-C', installed, '--list', '--json']));
   assert.ok(listed.candidates.some((task) => task.id === 'npm:build'));
   const api = path.join(installed, 'dist/index.js');

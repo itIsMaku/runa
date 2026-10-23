@@ -47,6 +47,51 @@ test('help and version work without a project', (t) => {
   assert.equal(invoke(directory, '--version').stdout.trim(), '0.1.0');
 });
 
+test('explicit foreground mode runs the default task without opening a dashboard', (t) => {
+  const cwd = fixture(t, {
+    '.runany.json': {
+      default: 'dev',
+      commands: { dev: [process.execPath, '-e', 'console.log("FOREGROUND")'] },
+    },
+  });
+  const result = invoke(cwd, '--run');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'FOREGROUND');
+});
+
+test('dashboard requires a terminal and rejects contradictory execution options', (t) => {
+  const cwd = fixture(t);
+  const result = invoke(cwd, '--tui');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /requires an interactive terminal/);
+  for (const args of [
+    ['--tui', 'dev'],
+    ['--tui', '--publish'],
+    ['--tui', '--run'],
+    ['--shutdown', 'dev'],
+    ['--shutdown', '--tui'],
+  ]) {
+    const invalid = invoke(cwd, ...args);
+    assert.equal(invalid.status, 1);
+    assert.match(invalid.stderr, /cannot be combined/);
+  }
+});
+
+test('shutdown without a manager does not start a daemon or require a project', (t) => {
+  const cwd = fixture(t);
+  const state = path.join(cwd, 'state');
+  const result = spawnSync(process.execPath, [cli, '--shutdown'], {
+    cwd,
+    env: { ...process.env, RUNA_STATE_DIR: state },
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /No process manager is running/);
+  assert.equal(existsSync(state), false);
+});
+
 test('empty and unsupported projects give an actionable error', (t) => {
   const result = invoke(fixture(t));
   assert.equal(result.status, 1);

@@ -56,4 +56,5 @@ export interface PackageManager {
 
 export interface ExecutableCommand extends Command {
   readonly cwd: string;
+  readonly env?: NodeJS.ProcessEnv;
 }

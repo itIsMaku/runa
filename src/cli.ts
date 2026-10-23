@@ -11,13 +11,17 @@ const help = `runa — discover and run a project's tasks
 
 Usage: runa [task | runner:task] [options] [-- arguments...]
 
-  runa                         Run the detected dev/start/serve/run/up task
+  runa                         Open the dashboard (in an interactive terminal)
   runa test                    Run a named task
   runa make:dev                Choose a specific runner
   runa -- --port 3000           Forward arguments to the default task
   runa --publish               Start the app and share it through a public URL
+  runa agent --help            JSON controls for agents over the same process manager
 
 Options:
+  --tui                        Open the process dashboard
+  --run                        Run the default task in the foreground
+  --shutdown                   Stop all dashboard processes and the manager
   --list, -l                   List discovered tasks without executing them
   --dry-run                    Print the command without executing it
   --choose                     Choose a task interactively
@@ -46,6 +50,9 @@ interface Options {
   publish?: boolean;
   port?: number;
   tunnel?: string;
+  tui?: boolean;
+  run?: boolean;
+  shutdown?: boolean;
 }
 
 function parse(argv: readonly string[]): Options {
@@ -73,6 +80,12 @@ function parse(argv: readonly string[]): Options {
       options.json = true;
     } else if (arg === '--publish') {
       options.publish = true;
+    } else if (arg === '--tui') {
+      options.tui = true;
+    } else if (arg === '--run') {
+      options.run = true;
+    } else if (arg === '--shutdown') {
+      options.shutdown = true;
     } else if (arg === '--port') {
       const value = argv[++index];
       if (value === undefined) {
@@ -108,6 +121,31 @@ function parse(argv: readonly string[]): Options {
   if (options.publish && options.list) {
     throw new Error('--publish cannot be combined with --list.');
   }
+  if (
+    options.tui &&
+    (options.run ||
+      options.publish ||
+      options.list ||
+      options.dryRun ||
+      options.task ||
+      options.extra.length ||
+      options.choose)
+  ) {
+    throw new Error('--tui cannot be combined with task execution options.');
+  }
+  if (
+    options.shutdown &&
+    (options.tui ||
+      options.run ||
+      options.publish ||
+      options.list ||
+      options.dryRun ||
+      options.task ||
+      options.extra.length ||
+      options.choose)
+  ) {
+    throw new Error('--shutdown cannot be combined with other actions.');
+  }
   return options;
 }
 
@@ -127,6 +165,15 @@ function printTasks(project: Project): void {
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
+  if (argv.length === 1 && argv[0] === '--internal-daemon') {
+    const { runDaemon } = await import('./daemon/server.js');
+    await runDaemon();
+    return 0;
+  }
+  if (argv[0] === 'agent') {
+    const { runAgent } = await import('./agent/index.js');
+    return runAgent(argv.slice(1));
+  }
   const options = parse(argv);
   if (options.help) {
     console.log(help);
@@ -137,6 +184,34 @@ export async function main(argv: readonly string[]): Promise<number> {
       JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version,
     );
     return 0;
+  }
+  if (options.shutdown) {
+    const { connectDaemon } = await import('./daemon/client.js');
+    const client = await connectDaemon(false);
+    if (client) {
+      await client.request({ action: 'shutdown' });
+    }
+    console.log(
+      client
+        ? 'runa: All dashboard processes and tunnels stopped.'
+        : 'runa: No process manager is running.',
+    );
+    return 0;
+  }
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+  if (
+    options.tui ||
+    (interactive &&
+      !options.task &&
+      !options.extra.length &&
+      !options.run &&
+      !options.publish &&
+      !options.list &&
+      !options.dryRun &&
+      !options.choose)
+  ) {
+    const { runDashboard } = await import('./tui/index.js');
+    return runDashboard(options.cwd);
   }
   const project = detect(options.cwd);
   if (options.list) {

@@ -6,7 +6,8 @@ One command to discover and run a project's tasks. Both `runa` and `runany` work
 
 ```sh
 cd my-project
-runa                        # Detect and run the default task
+runa                        # Open the process dashboard
+runa --run                  # Detect and run the default task in the foreground
 runa test                   # Run a named task
 runa --list                 # Discover available tasks
 runa --dry-run              # Preview the command
@@ -36,6 +37,87 @@ node /path/to/runa/dist/bin.js -C /path/to/your-project --dry-run
 ```
 
 The package is named `runanything-cli` locally; it has not been published to npm by this project. Use the repository installation above. The CLI is designed for macOS, Linux, and Windows. GitHub Actions checks all three systems with Node.js 20, 22, and 24.
+
+## Process dashboard
+
+Run `runa` in an interactive terminal to open the dashboard. It shows managed processes on the left and live logs for the selected process on the right, with colored status indicators and a public URL when sharing is enabled. Narrow terminals use a stacked layout.
+
+| Key                    | Action                                                        |
+| ---------------------- | ------------------------------------------------------------- |
+| `n`                    | Detect tasks in the current directory and choose one to start |
+| `↑` / `↓`              | Select a process and switch its log view                      |
+| `s`                    | Stop the selected process and its tunnel                      |
+| `r`                    | Restart the selected process                                  |
+| `p`                    | Start or stop sharing the selected running app                |
+| `d`                    | Remove a stopped process from history                         |
+| `PgUp` / `PgDn`, `End` | Browse scrollback or return to live logs                      |
+| `q`, Esc, Ctrl+C       | Detach, keeping managed apps and tunnels running              |
+| `Q`, then `y`          | Stop all managed apps and tunnels and close the dashboard     |
+
+Processes started from the dashboard or `runa agent start` belong to a background manager shared by your terminals. Close the dashboard, change to another project, and run `runa` again to see the same processes and logs. Pressing `n` always discovers tasks in the directory where that dashboard was opened. Task environments are captured from the terminal that starts them. Logs and process history are bounded and kept in memory for the manager's lifetime; there is no automatic reboot recovery or task restart.
+
+Publishing an existing process does not restart its app. If a loopback URL was detected in its logs, `p` uses that origin; otherwise it asks for the app's port. A missing `cloudflared` keeps the installation confirmation flow, temporarily handing the terminal to the installer. Turning off sharing leaves the app running. Closing the dashboard leaves public tunnels running too; use `p`, `s`, `Q`, or `runa --shutdown` to stop them.
+
+Direct commands such as `runa test`, `runa --run`, and `runa --publish` remain foreground commands and are not adopted into the dashboard. In non-interactive environments, bare `runa` keeps its previous foreground behavior. `runa --tui` explicitly requests the dashboard and requires a terminal. Input in managed tasks belongs to the dashboard; use foreground commands for applications that require interactive stdin. Keep managed servers in the foreground instead of daemonizing themselves.
+
+```sh
+runa --tui -C ../my-project
+runa --run
+runa --shutdown
+```
+
+The manager exits after a minute with no active tasks or clients. `runa --shutdown` stops its tasks and removes its discovery files. State lives under the user's application state directory; `RUNA_STATE_DIR` can override it for isolated sessions and tests. The manager listens only on loopback and authenticates local requests with a private token.
+
+## Agent control (Codex, Claude, and scripts)
+
+Use `runa agent …` to control the same background manager as the dashboard. An agent can start tasks while you watch their status, logs, and public URLs in `runa`; either client can stop or restart them. Agent commands work without a terminal, never open the dashboard, and never ask questions or install tools.
+
+```sh
+runa agent capabilities                         # Machine-readable commands and options
+runa agent discover -C ../my-project             # Discover task IDs without running anything
+runa agent start npm:dev -C ../my-project --wait-ready
+runa agent list                                 # Read IDs and status of managed processes
+runa agent inspect PROCESS_ID
+runa agent logs PROCESS_ID --tail 100
+runa agent logs PROCESS_ID --after 42             # Resume from nextCursor
+runa agent logs PROCESS_ID --follow --timeout 5000
+runa agent wait PROCESS_ID --for ready --timeout 30000
+runa agent publish PROCESS_ID                    # Share this app and return its public URL
+runa agent unpublish PROCESS_ID                  # Keep the app running
+runa agent restart PROCESS_ID --wait-ready
+runa agent stop PROCESS_ID
+runa agent remove PROCESS_ID                     # Remove stopped history
+```
+
+Omit the task in `start` to use the detected default. Ambiguous projects return an error with task IDs to choose from. Forward application arguments after `--`, for example `runa agent start npm:dev -- --port 3000`. `list -C directory` filters the list to that project. Each successful start creates a new managed process; reuse the returned ID for subsequent commands. IDs survive restarts within the manager's lifetime. Agents and dashboards share the same OS user and `RUNA_STATE_DIR`; different state directories create independent managers.
+
+JSON is the default (`--json` is also accepted). Each response has an API version and a success or error envelope:
+
+```json
+{ "version": 1, "ok": true, "result": { "id": "process-uuid", "status": "running" } }
+```
+
+```json
+{
+  "version": 1,
+  "ok": false,
+  "error": { "code": "NOT_FOUND", "message": "Process no longer exists." }
+}
+```
+
+`capabilities` describes supported commands, flags, and wait conditions. `discover`, `capabilities`, and an empty `list` do not start a manager or execute project commands. `--help` prints human-readable help. Process output stays in the log buffer, keeping command stdout parseable. Inspect/list results include task, working directory, status, exit code when available, and local/public URLs; captured environment variables are omitted.
+
+`logs` returns completed lines with sequence numbers and `nextCursor`. Use `--after nextCursor` to read new lines; `--tail` is the page limit (1–1000, default 100). Without a cursor it returns the latest lines. With a cursor it reads forward; keep fetching while `hasMore` is true. Partial lines appear separately in `pending` and do not advance the cursor until completed. `truncated: true` means older lines were evicted from bounded history. Log cursors survive process restarts but belong to one process ID and manager session. `logs --follow` emits NDJSON `logs` events and a final `end` event when the process exits or the follow timeout expires; a follow timeout is a successful bounded read.
+
+`start --wait-ready`, `restart --wait-ready`, and `wait --for ready` wait for an HTTP response from the detected loopback origin. Any HTTP status counts as ready; this checks responsiveness, not application health. For apps that do not print a URL, use `wait --for ready --port 3000`. For workers or non-HTTP tasks, use `wait --for running` or `wait --for exited`. The latter returns the process's actual `exitCode`, including nonzero codes, in a successful query response. Waiting for readiness after a process exits returns `PROCESS_EXITED`.
+
+Waits default to 30 seconds; `--timeout` accepts milliseconds up to 300000 on start, restart, wait, publish, and logs. Errors exit 1, timeouts exit 124, and interruptions exit 130. A timed-out readiness wait includes the process in `error.details.process`, so an agent can inspect or stop it. Timeout or interruption ends the client command and leaves managed apps and tunnels running. If a start was interrupted before its response, use `list` to recover its ID. `shutdown` stops **all** managed processes, including those started by other clients.
+
+`publish` attaches to an existing app and waits for a public URL; `--no-wait` returns while connecting and `wait --for published` waits separately. `--port` selects an explicit local target. Missing `cloudflared` returns `DEPENDENCY_UNAVAILABLE` with installation instructions. Install it separately or use the dashboard's interactive installation flow. Publishing makes the app available to anyone with its public URL; it does not restart the app. Unpublishing leaves the app running.
+
+If an older manager is still running after an upgrade, commands return `DAEMON_UPGRADE_REQUIRED` instead of replacing it and stopping its apps. At a convenient time run `runa --shutdown`, then reopen `runa` or start a managed task.
+
+This repository includes operator instructions in [AGENTS.md](AGENTS.md) and a [CLAUDE.md](CLAUDE.md) entry point. For another project, add a short instruction to its agent instructions: “Use `runa agent discover/start/logs/stop` for managed tasks; preserve unrelated processes and use the returned process IDs.” No model-specific SDK or server setup is required.
 
 ## Detection
 
