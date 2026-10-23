@@ -81,6 +81,9 @@ export async function runDaemon(directory = stateDirectory()): Promise<void> {
           },
         });
       } else if (data.action === 'shutdown') {
+        // This request is still active when shutdown closes idle connections.
+        // End its socket after the reply rather than waiting for keep-alive.
+        response.setHeader('Connection', 'close');
         await shutdown();
         response.end(JSON.stringify({ result: {} }));
         return;

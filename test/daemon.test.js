@@ -97,4 +97,23 @@ test('separate clients share one authenticated manager and its process logs', {
   await other.request({ action: 'stop', id: entry.id });
   await other.request({ action: 'remove', id: entry.id });
   assert.equal((await client.request({ action: 'snapshot' })).processes.length, 0);
+  await client.request({ action: 'shutdown' });
+  client = undefined;
+  let alive = true;
+  for (let attempt = 0; attempt < 100 && alive; attempt++) {
+    try {
+      process.kill(state.pid, 0);
+      await setTimeout(20);
+    } catch (error) {
+      if (error.code !== 'ESRCH') {
+        throw error;
+      }
+      alive = false;
+    }
+  }
+  assert.equal(
+    alive,
+    false,
+    'Shutdown must close its reply socket and exit without keep-alive delay.',
+  );
 });
