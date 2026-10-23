@@ -113,6 +113,17 @@ The dashboard uses Node's keypress events and ANSI alternate-screen rendering wi
 
 `test/manager.test.js` verifies supervision, environment capture, restart, bounded logs, and publishing without app restarts. `test/daemon.test.js` verifies shared clients and local authentication. `test/tui.test.js` checks rendering, narrow layouts, and terminal-output sanitization. For manual testing, exercise start, detach/reconnect from a second directory, selection, log scrolling, publish/unpublish, restart, and shutdown confirmation in a real terminal.
 
+## README preview
+
+The dashboard preview in `docs/assets/tui.png` is generated from `renderDashboard` with deterministic demo processes and logs. It uses the real layout and ANSI colors, with no servers or public tunnels running. This optional documentation step requires `rsvg-convert` from librsvg. Rebuild it after changing the dashboard layout:
+
+```sh
+npm run build
+node scripts/render-readme-demo.mjs
+```
+
+The PNG has a fixed dark background and is exported at 2× resolution. Text is placed in terminal cells before rasterization so browser font handling cannot distort the preview. Keep example paths and URLs free of personal data, and label demo content in the README.
+
 ## Agent API development
 
 `runa agent` is a non-interactive client of the same daemon RPC used by the dashboard. Keep its JSON envelope versioned and expose operations through `src/agent/schema.ts`; `capabilities` uses this registry. Machine commands must not write human progress messages, task output, ANSI escapes, or installation prompts to stdout. Wrap failures in a stable error code; do not leak stack traces or captured environments.
