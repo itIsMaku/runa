@@ -131,4 +131,4 @@ Fork the repository and make your changes on a branch. Describe the problem, the
 
 For changes to detection or process execution, add a focused test using a temporary project. Discovery must read project files without executing project code. Keep macOS, Linux, and Windows behavior in mind, especially argument passing, paths with spaces, and exit codes. Update the README when adding support for a project type or changing CLI behavior.
 
-CI checks linting, formatting, types, tests, and package installation on all three operating systems. Contributions are made under the repository's [MIT license](LICENSE).
+CI checks linting, formatting, types, tests, and package installation on all three operating systems. It runs for pull requests and pushes to `main`, avoiding duplicate branch-push and PR runs. A newer push cancels an older run for the same ref. Contributions are made under the repository's [MIT license](LICENSE).

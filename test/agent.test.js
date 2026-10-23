@@ -93,15 +93,21 @@ function fixture(t) {
     const current = readState(state);
     if (current) {
       await clientFor(current).request({ action: 'shutdown' });
-      for (
-        let attempt = 0;
-        attempt < 100 && existsSync(path.join(state, 'daemon.lock'));
-        attempt++
-      ) {
+      // State is removed just before the daemon exits. On Windows its cwd stays
+      // locked until process exit, so waiting only for daemon.lock is too early.
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+          process.kill(current.pid, 0);
+        } catch (error) {
+          if (error.code === 'ESRCH') {
+            break;
+          }
+          throw error;
+        }
         await delay(30);
       }
     }
-    rmSync(cwd, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
   return { cwd, state, tools, invoke };
 }
