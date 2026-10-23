@@ -4,7 +4,7 @@
 
 **Your projects, one terminal.** Discover how to run a project, manage its processes, watch live logs, and share localhost with a public URL. Works on macOS, Linux, and Windows.
 
-![runa TUI showing running projects, live logs, and a public preview URL](docs/assets/tui.svg)
+![runa TUI showing running projects, live logs, and a public preview URL](docs/assets/tui.png)
 
 _Example dashboard with demo projects and logs, rendered by runa's actual TUI. The preview URL is illustrative._
 

@@ -1,5 +1,7 @@
-// Build first, then run this script to regenerate the README's SVG preview.
+// Build first, then run this script to regenerate the README's PNG preview.
+// This optional docs tool requires rsvg-convert (librsvg) on PATH.
 // Demo data goes through the real TUI renderer; no project processes or tunnels run.
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderDashboard } from '../dist/tui/render.js';
@@ -136,10 +138,13 @@ for (const [row, line] of frame.split('\r\n').entries()) {
         `<rect x="${x}" y="${y - 13}" width="${length * cell}" height="${lineHeight}" fill="${background}"/>`,
       );
     }
-    if (part.trim()) {
-      elements.push(
-        `<text x="${x}" y="${y}" fill="${foreground}"${bold ? ' font-weight="700"' : ''} textLength="${length * cell}" lengthAdjust="spacingAndGlyphs">${escapeXml(part)}</text>`,
-      );
+    // Place glyphs in terminal cells; never stretch padded strings to a textLength.
+    for (const [index, character] of Array.from(part).entries()) {
+      if (character.trim()) {
+        elements.push(
+          `<text x="${x + index * cell}" y="${y}" fill="${foreground}"${bold ? ' font-weight="700"' : ''}>${escapeXml(character)}</text>`,
+        );
+      }
     }
     column += length;
   }
@@ -160,6 +165,15 @@ ${elements.join('\n')}
 `;
 const directory = new URL('../docs/assets/', import.meta.url);
 mkdirSync(directory, { recursive: true });
-const destination = new URL('tui.svg', directory);
-writeFileSync(destination, svg);
+const destination = new URL('tui.png', directory);
+const result = spawnSync('rsvg-convert', ['--zoom', '2'], { input: svg, maxBuffer: 10485760 });
+if (result.error || result.status !== 0) {
+  throw new Error(
+    'Could not render the PNG preview. This optional docs tool requires rsvg-convert (librsvg).',
+    {
+      cause: result.error ?? new Error(result.stderr.toString()),
+    },
+  );
+}
+writeFileSync(destination, result.stdout);
 console.log(`Generated ${fileURLToPath(destination)}`);

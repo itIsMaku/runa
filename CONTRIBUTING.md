@@ -115,14 +115,14 @@ The dashboard uses Node's keypress events and ANSI alternate-screen rendering wi
 
 ## README preview
 
-The dashboard preview in `docs/assets/tui.svg` is generated from `renderDashboard` with deterministic demo processes and logs. It uses the real layout and ANSI colors, with no servers or public tunnels running. Rebuild it after changing the dashboard layout:
+The dashboard preview in `docs/assets/tui.png` is generated from `renderDashboard` with deterministic demo processes and logs. It uses the real layout and ANSI colors, with no servers or public tunnels running. This optional documentation step requires `rsvg-convert` from librsvg. Rebuild it after changing the dashboard layout:
 
 ```sh
 npm run build
 node scripts/render-readme-demo.mjs
 ```
 
-The SVG has a fixed dark background and scales on GitHub. Keep example paths and URLs free of personal data, and label demo content in the README.
+The PNG has a fixed dark background and is exported at 2× resolution. Text is placed in terminal cells before rasterization so browser font handling cannot distort the preview. Keep example paths and URLs free of personal data, and label demo content in the README.
 
 ## Agent API development
 
